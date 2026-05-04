@@ -1,0 +1,12 @@
+/*.json
+dist/
+node_modules/
+Python
+/*.py
+__pycache__/
+*.pyc
+.env
+.venv/
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,1 @@
+ALTER TABLE storage_specs ADD COLUMN memory_suffix VARCHAR(10);

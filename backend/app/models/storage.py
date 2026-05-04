@@ -14,7 +14,7 @@ class StorageSpec(Base):
     memory_cells = Column(String)  # 3D-NAND / TLC / QLC
     read_speed = Column(Integer) # MB/s
     write_speed = Column(Integer) # MB/s
-
+    memory_suffix = Column(String, nullable=True) # e.g "TB" or "GB"
     rpm = Column(Integer, nullable=True)
 
     product = relationship(

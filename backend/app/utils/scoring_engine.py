@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 from app.utils.mappings import BUDGET_DISTRIBUTION
@@ -20,9 +21,13 @@ def _component_specs(component: Any) -> dict[str, Any]:
             "manufacturer": getattr(cpu_spec, "manufacturer", None),
             "socket": getattr(cpu_spec, "socket", None),
             "cores": getattr(cpu_spec, "cores", None),
+            "threads": getattr(cpu_spec, "threads", None),
+            "base_clock": getattr(cpu_spec, "base_clock", None),
+            "boost_clock": getattr(cpu_spec, "boost_clock", None),
             "tdp": getattr(cpu_spec, "tdp", None),
             "memory_support": getattr(cpu_spec, "memory_support", None),
             "max_memory": getattr(cpu_spec, "max_memory", None),
+            "l3_cache": getattr(cpu_spec, "l3_cache", None),
             "performance": getattr(cpu_spec, "performance_score", None),
             "performance_score": getattr(cpu_spec, "performance_score", None),
             "graphics_model": getattr(cpu_spec, "graphics_model", None),
@@ -41,6 +46,11 @@ def _component_specs(component: Any) -> dict[str, Any]:
         return {
             "frequency": getattr(ram_spec, "frequency", None),
             "capacity": getattr(ram_spec, "capacity", None),
+            "modules_count": getattr(ram_spec, "modules_count", None),
+            "memory_bandwidth": getattr(ram_spec, "memory_bandwidth", None),
+            "cas_latency": getattr(ram_spec, "cas_latency", None),
+            "timings": getattr(ram_spec, "timings", None),
+            "voltage": getattr(ram_spec, "voltage", None),
             "ram_type": getattr(ram_spec, "ram_type", None),
         }
 
@@ -58,6 +68,17 @@ def _component_specs(component: Any) -> dict[str, Any]:
         return {
             "socket": getattr(motherboard_spec, "socket", None),
             "ram_type": getattr(motherboard_spec, "ram_type", None),
+            "chipset": getattr(motherboard_spec, "chipset", None),
+            "max_ram": getattr(motherboard_spec, "max_ram", None),
+            "memory_slots": getattr(motherboard_spec, "memory_slots", None),
+            "pcie_x1_slots": getattr(motherboard_spec, "pcie_x1_slots", None),
+            "m2_slots": getattr(motherboard_spec, "m2_slots", None),
+            "sata_ports": getattr(motherboard_spec, "sata_ports", None),
+            "total_channels": getattr(motherboard_spec, "total_channels", None),
+            "form_factor": getattr(motherboard_spec, "form_factor", None),
+            "min_memory_frequency": getattr(motherboard_spec, "min_memory_frequency", None),
+            "max_memory_frequency": getattr(motherboard_spec, "max_memory_frequency", None),
+            "sys_fan": getattr(motherboard_spec, "sys_fan", None),
         }
 
     psu_spec = getattr(component, "psu_spec", None)
@@ -75,6 +96,103 @@ def _component_specs(component: Any) -> dict[str, Any]:
         }
 
     return {}
+
+
+def _int_or_default(value: Any, default: int = 0) -> int:
+    try:
+        if value is None:
+            return default
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _extract_ram_cas_latency(specs: dict[str, Any], ram_name: str) -> int:
+    cas = _int_or_default(specs.get("cas_latency"), 0)
+    if cas > 0:
+        return cas
+
+    timings = str(specs.get("timings") or "").strip().lower()
+    if timings:
+        # Common timing formats: "30-38-38", "CL30-36-36".
+        timings_match = re.search(r"(?:cl\s*)?(\d{2})", timings)
+        if timings_match:
+            return _int_or_default(timings_match.group(1), 0)
+
+    # Fallback to patterns in product names like "CL30" or "C36".
+    name_match = re.search(r"\b(?:cl|c)(\d{2})\b", ram_name.lower())
+    if name_match:
+        return _int_or_default(name_match.group(1), 0)
+
+    return 0
+
+
+def _normalize_mhz_value(value: Any) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+    if numeric <= 0:
+        return 0.0
+
+    # Normalize obvious Hz/kHz inputs to MHz while preserving already-MHz values.
+    if numeric >= 1_000_000_000:
+        return numeric / 1_000_000.0
+    if numeric >= 1_000_000:
+        return numeric / 1_000.0
+
+    return numeric
+
+
+def _chipset_tier(chipset: Any) -> tuple[str, int]:
+    text = str(chipset or "").lower()
+    if not text:
+        return "unknown", 0
+
+    match = re.search(r"\b([abhxz])\s*(\d{3})\b", text)
+    if not match:
+        return "unknown", 0
+
+    code = match.group(1).upper()
+    series = int(match.group(2))
+    generation = series // 100
+    quality_digit = (series // 10) % 10
+
+    if code == "A":
+        return f"A{generation}", 10 + generation
+    if code == "B":
+        return f"B{generation}", 20 + generation
+    if code == "X":
+        return f"X{generation}", 30 + generation
+
+    if code == "H":
+        return f"H{quality_digit}", 10 + generation + quality_digit * 2
+
+    if code == "Z":
+        return f"Z{quality_digit}", 28 + generation + quality_digit * 2
+
+    return "unknown", 0
+
+
+def _cpu_model_tier_score(cpu_name: str) -> int:
+    name = cpu_name.lower()
+
+    if "ryzen 9" in name or "i9" in name:
+        return 14
+    if "ryzen 7" in name or "i7" in name:
+        return 12
+    if "ryzen 5" in name or "i5" in name:
+        return 9
+    if "ryzen 3" in name or "i3" in name:
+        return 2
+
+    return 5
+
+
+def _cpu_is_top_tier(cpu_name: str) -> bool:
+    name = cpu_name.lower()
+    return any(x in name for x in ["ryzen 9", "core i9", "ultra 9", "threadripper", "x3d"])
 
 def normalize_goal(goal: str):
     goal = goal.lower()
@@ -131,28 +249,59 @@ def score_component(component, category, budget, goal, distribution):
     # 3. CPU LOGIC
     # --------------------------------
     if category == "cpu":
-        cores = specs.get("cores", 0)
+        cores = _int_or_default(specs.get("cores"), 0)
+        threads = _int_or_default(specs.get("threads"), 0)
+        l3_cache = _int_or_default(specs.get("l3_cache"), 0)
+        base_clock = _normalize_mhz_value(specs.get("base_clock"))
+        boost_clock = _normalize_mhz_value(specs.get("boost_clock"))
         manufacturer = str(specs.get("manufacturer", "")).lower()
-        is_amd = manufacturer == "amd" or "amd" in name
 
         if goal == "esports":
-            if is_amd:
-                score += 20
-            if "x3d" in name:
-                # Strong, decisive boost for X3D CPUs in esports builds so they dominate
-                # other candidates. This is intentionally large to make X3D clearly
-                # preferred for esports recommendations.
-                score += 20000
-            if "ryzen" in name:
+            # Esports: prioritize L3 cache, boost clock, and sensible core counts.
+            if manufacturer == "amd" or "amd" in name:
+                score += 8
+
+            if l3_cache:
+                score += l3_cache * 0.9
+
+            if boost_clock:
+                score += min(boost_clock / 450, 14)
+
+            if base_clock:
+                score += min(base_clock / 700, 6)
+
+            if 6 <= cores <= 8:
+                score += 12
+            elif 9 <= cores <= 12:
+                score += 6
+            elif cores >= 13:
+                score -= 4
+            elif cores and cores < 6:
+                score -= 8
+
+            if threads >= 12:
+                score += 4
+
+            score += _cpu_model_tier_score(name)
+
+        elif goal == "balanced":
+            if cores >= 6:
                 score += 10
-            if cores >= 8:
-                score += 15
-            if cores <= 6 and "x3d" not in name:
-                score -= 10
+            if l3_cache:
+                score += min(l3_cache * 0.35, 28)
+            if boost_clock:
+                score += min(boost_clock / 600, 9)
+            if base_clock:
+                score += min(base_clock / 900, 4)
 
         elif goal == "aaa":
             if cores >= 6:
                 score += 10
+            if boost_clock:
+                score += min(boost_clock / 800, 6)
+
+
+
 
     # --------------------------------
     # 4. GPU LOGIC
@@ -166,39 +315,114 @@ def score_component(component, category, budget, goal, distribution):
             else:
                 score += perf * 0.3
 
+        gpu_frequency = _normalize_mhz_value(specs.get("frequency"))
+        if gpu_frequency:
+            score += min(gpu_frequency / 2000, 8)
+
     # --------------------------------
-    # 5. RAM
+    # 5. MOTHERBOARD
+    # --------------------------------
+    if category == "motherboard":
+        chipset_label, chipset_score = _chipset_tier(specs.get("chipset"))
+        memory_slots = _int_or_default(specs.get("memory_slots"), 0)
+        pcie_x1_slots = _int_or_default(specs.get("pcie_x1_slots"), 0)
+        m2_slots = _int_or_default(specs.get("m2_slots"), 0)
+        sata_ports = _int_or_default(specs.get("sata_ports"), 0)
+        total_channels = _int_or_default(specs.get("total_channels"), 0)
+        sys_fan = _int_or_default(specs.get("sys_fan"), 0)
+        max_ram = _int_or_default(specs.get("max_ram"), 0)
+        min_mem_freq = _normalize_mhz_value(specs.get("min_memory_frequency"))
+        max_mem_freq = _normalize_mhz_value(specs.get("max_memory_frequency"))
+
+        if chipset_score:
+            score += min(chipset_score / 3, 16)
+
+        if memory_slots:
+            score += min(memory_slots * 2.2, 10)
+        if max_ram:
+            score += min(max_ram / 64, 8)
+        if m2_slots:
+            score += min(m2_slots * 2.5, 8)
+        if pcie_x1_slots:
+            score += min(pcie_x1_slots * 1.2, 4)
+        if sata_ports:
+            score += min(sata_ports * 0.4, 3)
+        if total_channels:
+            score += min(total_channels * 1.5, 4)
+        if sys_fan:
+            score += min(sys_fan * 0.8, 4)
+
+        if max_mem_freq:
+            score += min(max_mem_freq / 1000, 10)
+        if min_mem_freq:
+            score += min(min_mem_freq / 3000, 3)
+
+    # --------------------------------
+    # 6. RAM
     # --------------------------------
     if category == "ram":
         freq = specs.get("frequency") or 0
-        capacity = specs.get("capacity") or 0
+        capacity_per_module = _int_or_default(specs.get("capacity"), 0)
+        modules_count = max(_int_or_default(specs.get("modules_count"), 1), 1)
+        total_capacity = capacity_per_module * modules_count
+        bandwidth = _int_or_default(specs.get("memory_bandwidth"), 0)
+        cas_latency = _extract_ram_cas_latency(specs, name)
+        voltage_raw = specs.get("voltage")
         ram_label = f"{name} {subcategory}"
 
         if "sodimm" in ram_label or "so-dimm" in ram_label or "so dimm" in ram_label:
             score -= 100
 
-        if goal == "office":
-            if capacity >= 16:
-                score += 35
-            if capacity >= 32:
-                score += 10
-            if capacity < 16:
-                score -= 20
+        # Prefer 32GB total kit capacity as the default sweet spot across all budgets/goals.
+        if total_capacity == 32:
+            score += 70
+        elif total_capacity > 32:
+            # Keep higher-capacity kits compatible, but below 32GB recommendations.
+            score += 20
+        elif total_capacity >= 16:
+            score += 35
         else:
-            if capacity >= 32:
-                score += 45
-            elif capacity >= 16:
-                score += 15
-            else:
-                score -= 20
+            score -= 25
 
         if freq:
             # Keep speed as a small, generation-agnostic tie-breaker so DDR2, DDR3,
             # DDR4, DDR5, and future DDR6 all score consistently without hardcoded limits.
             score += min(freq / 2000, 4)
 
+        # Prefer lower real latency when CAS and frequency are both available.
+        if cas_latency and freq:
+            latency_ns = (cas_latency * 2000) / freq
+            if latency_ns <= 10:
+                score += 12
+            elif latency_ns <= 11:
+                score += 9
+            elif latency_ns <= 12:
+                score += 6
+            elif latency_ns <= 13:
+                score += 3
+            else:
+                score -= 2
+
+        # Mild tie-breaker by memory bandwidth.
+        if bandwidth:
+            score += min(bandwidth / 12000, 3)
+
+        # Slightly favor lower-voltage kits for efficiency/thermals.
+        try:
+            voltage = float(voltage_raw) if voltage_raw is not None else 0.0
+        except (TypeError, ValueError):
+            voltage = 0.0
+
+        if voltage > 0:
+            if voltage <= 1.25:
+                score += 2
+            elif voltage <= 1.35:
+                score += 1
+            else:
+                score -= 1
+
     # --------------------------------
-    # 6. STORAGE (SSD meta)
+    # 7. STORAGE (SSD meta)
     # --------------------------------
     if category == "storage":
         interface = str(specs.get("interface", "") or "").lower()
@@ -347,25 +571,42 @@ def build_context_from_build(build) -> dict[str, dict[str, Any]]:
 
         if getattr(product, "cpu_spec", None):
             specs = {
+                "name": product.name,
+                "brand": product.brand,
                 "socket": product.cpu_spec.socket,
                 "tdp": product.cpu_spec.tdp,
                 "cores": product.cpu_spec.cores,
+                "threads": product.cpu_spec.threads,
+                "base_clock": product.cpu_spec.base_clock,
+                "boost_clock": product.cpu_spec.boost_clock,
                 "memory_support": product.cpu_spec.memory_support,
                 "max_memory": product.cpu_spec.max_memory,
+                "l3_cache": product.cpu_spec.l3_cache,
                 "performance": product.cpu_spec.performance_score,
                 "graphics_model": product.cpu_spec.graphics_model,
             }
         elif getattr(product, "motherboard_spec", None):
             specs = {
+                "name": product.name,
+                "brand": product.brand,
                 "socket": product.motherboard_spec.socket,
+                "chipset": product.motherboard_spec.chipset,
                 "ram_type": product.motherboard_spec.ram_type,
                 "max_ram": product.motherboard_spec.max_ram,
+                "memory_slots": product.motherboard_spec.memory_slots,
+                "pcie_x1_slots": product.motherboard_spec.pcie_x1_slots,
+                "m2_slots": product.motherboard_spec.m2_slots,
+                "sata_ports": product.motherboard_spec.sata_ports,
+                "total_channels": product.motherboard_spec.total_channels,
+                "form_factor": product.motherboard_spec.form_factor,
                 "min_memory_frequency": product.motherboard_spec.min_memory_frequency,
                 "max_memory_frequency": product.motherboard_spec.max_memory_frequency,
-                "memory_slots": product.motherboard_spec.memory_slots,
+                "sys_fan": product.motherboard_spec.sys_fan,
             }
         elif getattr(product, "ram_spec", None):
             specs = {
+                "name": product.name,
+                "brand": product.brand,
                 "ram_type": product.ram_spec.ram_type,
                 "frequency": product.ram_spec.frequency,
                 "capacity": product.ram_spec.capacity,
@@ -375,9 +616,15 @@ def build_context_from_build(build) -> dict[str, dict[str, Any]]:
             }
         elif getattr(product, "gpu_spec", None):
             specs = {
+                "name": product.name,
+                "brand": product.brand,
                 "performance": product.gpu_spec.performance,
                 "vram": product.gpu_spec.vram,
+                "frequency": product.gpu_spec.frequency,
+                "memory_type": product.gpu_spec.memory_type,
+                "max_resolution": product.gpu_spec.max_resolution,
                 "recommended_power_supply": product.gpu_spec.recommended_power_supply,
+                "power_connector": product.gpu_spec.power_connector,
             }
         elif getattr(product, "psu_spec", None):
             specs = {
@@ -440,12 +687,39 @@ def evaluate_component_compatibility(category: str, candidate: dict[str, Any], b
     elif category == "motherboard":
         cpu_socket = cpu.get("socket") if cpu else None
         board_socket = specs.get("socket")
+        board_chipset_label, chipset_score = _chipset_tier(specs.get("chipset"))
+        cpu_name = str(cpu.get("name", "") or "").lower() if cpu else ""
+        cpu_cores = _int_or_default(cpu.get("cores"), 0) if cpu else 0
+        cpu_l3_cache = _int_or_default(cpu.get("l3_cache"), 0) if cpu else 0
+        cpu_boost_clock = _normalize_mhz_value(cpu.get("boost_clock")) if cpu else 0.0
         if cpu_socket and board_socket:
             if board_socket == cpu_socket:
                 details.append(f"Socket matches CPU: {board_socket}")
             else:
                 compatible = False
                 details.append(_compatibility_message("Socket", False, board_socket, cpu_socket))
+
+        if cpu_name:
+            is_top_tier_cpu = (
+                _cpu_is_top_tier(cpu_name)
+                or cpu_cores >= 10
+                or cpu_l3_cache >= 32
+                or cpu_boost_clock >= 5000
+            )
+
+            if chipset_score <= 22 and is_top_tier_cpu:
+                compatible = False
+                details.append(
+                    "Low-tier chipset boards are not recommended for top-tier CPUs; choose a B/H6+/H7+/X/Z chipset for this processor"
+                )
+            elif chipset_score >= 46:
+                details.append(f"{board_chipset_label}-chipset board provides the strongest platform headroom for this CPU")
+            elif chipset_score >= 34:
+                details.append(f"{board_chipset_label}-chipset board offers a strong fit for this CPU")
+            elif chipset_score >= 24:
+                details.append(f"{board_chipset_label}-chipset board offers a balanced fit for this CPU")
+            else:
+                details.append(f"{board_chipset_label}-chipset board is better suited for budget or entry-level CPUs")
 
         selected_ram_type = ram.get("ram_type") if ram else None
         board_ram_type = specs.get("ram_type")
@@ -473,11 +747,13 @@ def evaluate_component_compatibility(category: str, candidate: dict[str, Any], b
 
         board_ram_type = motherboard.get("ram_type") if motherboard else None
         board_max_ram = motherboard.get("max_ram") if motherboard else None
-        board_min_frequency = motherboard.get("min_memory_frequency") if motherboard else None
-        board_max_frequency = motherboard.get("max_memory_frequency") if motherboard else None
+        board_min_frequency = _normalize_mhz_value(motherboard.get("min_memory_frequency")) if motherboard else 0.0
+        board_max_frequency = _normalize_mhz_value(motherboard.get("max_memory_frequency")) if motherboard else 0.0
         cpu_memory_support = cpu.get("memory_support") if cpu else None
         cpu_max_memory = cpu.get("max_memory") if cpu else None
-        ram_capacity = specs.get("capacity")
+        ram_capacity_per_module = _int_or_default(specs.get("capacity"), 0)
+        ram_modules_count = max(_int_or_default(specs.get("modules_count"), 1), 1)
+        ram_total_capacity = ram_capacity_per_module * ram_modules_count
         ram_frequency = specs.get("frequency")
         ram_type = specs.get("ram_type")
 
@@ -502,27 +778,29 @@ def evaluate_component_compatibility(category: str, candidate: dict[str, Any], b
                 compatible = False
                 details.append(_compatibility_message("CPU memory support", False, ram_type, cpu_memory_support))
 
-        if board_max_ram and ram_capacity:
-            if ram_capacity <= board_max_ram:
-                details.append(f"Motherboard max RAM {board_max_ram}GB covers {ram_capacity}GB kit")
+        if board_max_ram and ram_total_capacity:
+            if ram_total_capacity <= board_max_ram:
+                details.append(f"Motherboard max RAM {board_max_ram}GB covers {ram_total_capacity}GB kit")
             else:
                 compatible = False
-                details.append(_compatibility_message("Motherboard max RAM", False, f"{board_max_ram}GB", f"{ram_capacity}GB"))
+                details.append(_compatibility_message("Motherboard max RAM", False, f"{board_max_ram}GB", f"{ram_total_capacity}GB"))
 
-        if cpu_max_memory and ram_capacity:
-            if ram_capacity <= cpu_max_memory:
-                details.append(f"CPU max memory {cpu_max_memory}GB covers {ram_capacity}GB kit")
+        if cpu_max_memory and ram_total_capacity:
+            if ram_total_capacity <= cpu_max_memory:
+                details.append(f"CPU max memory {cpu_max_memory}GB covers {ram_total_capacity}GB kit")
             else:
                 compatible = False
-                details.append(_compatibility_message("CPU max memory", False, f"{cpu_max_memory}GB", f"{ram_capacity}GB"))
+                details.append(_compatibility_message("CPU max memory", False, f"{cpu_max_memory}GB", f"{ram_total_capacity}GB"))
 
-        if board_min_frequency and ram_frequency and ram_frequency < board_min_frequency:
-            compatible = False
-            details.append(_compatibility_message("RAM frequency", False, f"{board_min_frequency}MHz+", f"{ram_frequency}MHz"))
+        ram_frequency_mhz = _normalize_mhz_value(ram_frequency)
 
-        if board_max_frequency and ram_frequency and ram_frequency > board_max_frequency:
+        if board_min_frequency and ram_frequency_mhz and ram_frequency_mhz < board_min_frequency:
             compatible = False
-            details.append(_compatibility_message("RAM frequency", False, f"up to {board_max_frequency}MHz", f"{ram_frequency}MHz"))
+            details.append(_compatibility_message("RAM frequency", False, f"{board_min_frequency:.0f}MHz+", f"{ram_frequency_mhz:.0f}MHz"))
+
+        if board_max_frequency and ram_frequency_mhz and ram_frequency_mhz > board_max_frequency:
+            compatible = False
+            details.append(_compatibility_message("RAM frequency", False, f"up to {board_max_frequency:.0f}MHz", f"{ram_frequency_mhz:.0f}MHz"))
 
         # Check recommended modules count and motherboard slots
         candidate_modules = specs.get("modules_count")
@@ -675,13 +953,13 @@ def rank_category_products(
         sub_lower = str(product.get("subcategory", "") or "").lower()
         brand_lower = str(product.get("brand", "") or "").lower()
         cond_lower = str(product.get("condition", "") or "").lower()
-        used_keywords = ("used", "ref", "востановленно")
+        used_keywords = ("used", "ref", "восстановлено", "Б/у", "б/у", "ремонт", "ремонтирован", "ремонтная", "ремонтный", "следы")
         is_used = any(k in name_lower or k in sub_lower or k in brand_lower or k in cond_lower for k in used_keywords)
         if is_used:
             score -= 80
             compatibility_details.insert(0, "Detected used/refurbished item — deprioritized in recommendations")
 
-        # budget / x3d flags used for deterministic sorting
+        # budget flags used for deterministic sorting
         category_limit = int((budget or 0) * distribution.get(category, (0, 1))[1]) if budget and budget > 0 else None
         in_budget = True
         if category_limit is not None:
@@ -696,8 +974,18 @@ def rank_category_products(
             elif modules and modules > 2:
                 score += 10
 
-        name_lower = str(product.get("name", "") or "").lower()
-        x3d = "x3d" in name_lower
+            capacity_per_module = _int_or_default(specs.get("capacity"), 0)
+            modules_count = max(_int_or_default(specs.get("modules_count"), 1), 1)
+            total_capacity = capacity_per_module * modules_count
+
+            if goal == "office" and total_capacity > 16:
+                compatibility_details.append(
+                    "Office build note: 16GB is usually enough; higher capacities are supported but ranked lower by default"
+                )
+            elif goal != "office" and total_capacity > 32:
+                compatibility_details.append(
+                    "RAM recommendation note: 32GB is the default sweet spot; higher capacities are supported but ranked lower by default"
+                )
 
         ranked.append(
             {
@@ -706,7 +994,6 @@ def rank_category_products(
                 "compatible": compatible,
                 "compatibility_details": compatibility_details,
                 "in_budget": in_budget,
-                "x3d": x3d,
             }
         )
 
@@ -715,32 +1002,15 @@ def rank_category_products(
     elif sort_by == "price_high":
         ranked.sort(key=lambda item: (-item.get("price", 0), not item.get("compatible", False), -item.get("score", 0)))
     else:
-        # Recommended sorting: put X3D first for esports, otherwise prefer in-budget items,
-        # then compatibility, then score, then prefer lower price as tiebreaker.
-        if goal == "esports":
-            # Prioritize items that fit the budget first, then prefer X3D CPUs,
-            # then compatibility, then raw score. This keeps in-budget items
-            # most relevant while still promoting X3D strongly inside that group.
-            ranked.sort(
-                key=lambda item: (
-                    item.get("in_budget", False),
-                    item.get("x3d", False),
-                    item.get("compatible", False),
-                    item.get("score", 0),
-                    -item.get("price", 0),
-                ),
-                reverse=True,
-            )
-        else:
-            ranked.sort(
-                key=lambda item: (
-                    item.get("in_budget", False),
-                    item.get("compatible", False),
-                    item.get("score", 0),
-                    -item.get("price", 0),
-                ),
-                reverse=True,
-            )
+        ranked.sort(
+            key=lambda item: (
+                item.get("in_budget", False),
+                item.get("compatible", False),
+                item.get("score", 0),
+                -item.get("price", 0),
+            ),
+            reverse=True,
+        )
 
     if top_n is None or top_n <= 0:
         return ranked

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type { Build } from '../types';
 import { Trash2, AlertCircle } from 'lucide-react';
 import apiClient from '../lib/apiClient';
@@ -14,17 +15,41 @@ export default function BuildSummaryPanel({
     onBuildUpdate,
     onRemoveComponent,
 }: BuildSummaryPanelProps) {
+    const [name, setName] = useState(build.name);
+    const [budget, setBudget] = useState(build.budget ? String(build.budget) : '');
+    const [goal, setGoal] = useState(build.goal);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        setName(build.name);
+        setBudget(build.budget ? String(build.budget) : '');
+        setGoal(build.goal);
+    }, [build.id, build.name, build.budget, build.goal]);
+
+    const normalizedName = name.trim() || build.name;
+    const parsedBudget = budget.trim() ? parseInt(budget, 10) : null;
+    const originalBudget = build.budget ?? null;
+    const hasUnsavedChanges =
+        normalizedName !== build.name ||
+        parsedBudget !== originalBudget ||
+        goal !== build.goal;
+
     const handleSaveBuild = async () => {
+        if (!hasUnsavedChanges) return;
+
+        setSaving(true);
         try {
             const response = await apiClient.put(`/builder/${build.id}`, {
-                name: build.name,
-                budget: build.budget,
-                goal: build.goal,
+                name: normalizedName,
+                budget: parsedBudget,
+                goal,
             });
             onBuildUpdate(response.data);
             toast.success('Build saved successfully');
         } catch (error) {
             toast.error('Failed to save build');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -51,18 +76,35 @@ export default function BuildSummaryPanel({
             <div className="mb-6">
                 <input
                     type="text"
-                    value={build.name}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                     className="input-premium mb-4"
-                    readOnly
+                    placeholder="Build name"
                 />
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <p className="text-sm text-[color:var(--text-soft)]">Goal</p>
-                        <p className="font-semibold capitalize">{build.goal}</p>
+                        <p className="text-sm text-[color:var(--text-soft)] mb-1">Goal</p>
+                        <select
+                            value={goal}
+                            onChange={(e) => setGoal(e.target.value)}
+                            className="select-premium"
+                        >
+                            <option value="balanced">Balanced</option>
+                            <option value="esports">Esports</option>
+                            <option value="aaa">AAA</option>
+                            <option value="office">Office</option>
+                        </select>
                     </div>
                     <div>
-                        <p className="text-sm text-[color:var(--text-soft)]">Budget</p>
-                        <p className="font-semibold">₴{build.budget || 'Unlimited'}</p>
+                        <p className="text-sm text-[color:var(--text-soft)] mb-1">Budget (₴)</p>
+                        <input
+                            type="number"
+                            min="0"
+                            value={budget}
+                            onChange={(e) => setBudget(e.target.value)}
+                            className="input-premium"
+                            placeholder="Unlimited"
+                        />
                     </div>
                 </div>
             </div>
@@ -109,12 +151,12 @@ export default function BuildSummaryPanel({
             </div>
 
             {build.compatibility_warnings.length > 0 && (
-                <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-lg">
+                <div className="mb-6 p-4 rounded-xl border border-[var(--border-soft)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-muted)_85%,#f0f7ff)_0%,color-mix(in_srgb,var(--surface)_88%,#eaf2fd)_100%)] shadow-[var(--shadow-soft)]">
                     <div className="flex gap-2 mb-2">
-                        <AlertCircle className="w-5 h-5 text-rose-700 flex-shrink-0 mt-0.5" />
-                        <h4 className="font-semibold text-rose-700">Compatibility Warnings</h4>
+                        <AlertCircle className="w-5 h-5 text-[color:var(--primary)] flex-shrink-0 mt-0.5" />
+                        <h4 className="font-semibold text-[color:var(--text-main)]">Compatibility Warnings</h4>
                     </div>
-                    <ul className="text-sm text-rose-700/90 space-y-1 ml-7">
+                    <ul className="text-sm text-[color:var(--text-soft)] space-y-1 ml-7">
                         {build.compatibility_warnings.map((warning, idx) => (
                             <li key={idx}>• {warning}</li>
                         ))}
@@ -122,8 +164,18 @@ export default function BuildSummaryPanel({
                 </div>
             )}
 
-            <button onClick={handleSaveBuild} className="w-full min-h-11 btn-primary">
-                Save Build
+            <div className="mb-3 flex items-center justify-between text-sm">
+                <span className={hasUnsavedChanges ? 'text-[color:var(--accent-strong)] font-semibold' : 'text-[color:var(--text-soft)]'}>
+                    {hasUnsavedChanges ? 'Unsaved changes' : 'All changes saved'}
+                </span>
+            </div>
+
+            <button
+                onClick={handleSaveBuild}
+                disabled={saving || !hasUnsavedChanges}
+                className="w-full min-h-11 btn-primary disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+                {saving ? 'Saving...' : hasUnsavedChanges ? 'Save Changes' : 'Saved'}
             </button>
         </div>
     );

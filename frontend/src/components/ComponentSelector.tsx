@@ -3,6 +3,7 @@ import type { ComponentRecommendation, Product } from '../types';
 import apiClient from '../lib/apiClient';
 import { Loader2, Search, SlidersHorizontal, X } from 'lucide-react';
 import { toast } from 'sonner';
+import FilterPanel from './FilterPanel.tsx';
 
 interface ComponentSelectorProps {
     buildId: number;
@@ -13,6 +14,8 @@ interface ComponentSelectorProps {
     buildGoal: string;
     buildBudget: number | null;
 }
+
+type FilterState = Record<string, string | boolean | number | null | undefined>;
 
 export default function ComponentSelector({
     buildId,
@@ -25,11 +28,15 @@ export default function ComponentSelector({
 }: ComponentSelectorProps) {
     const [products, setProducts] = useState<ComponentRecommendation[]>([]);
     const [loading, setLoading] = useState(false);
-    const [compatibleOnly, setCompatibleOnly] = useState(true);
     const [search, setSearch] = useState('');
-    const [minPrice, setMinPrice] = useState('');
-    const [maxPrice, setMaxPrice] = useState('');
     const [sortBy, setSortBy] = useState('recommended');
+    const [showFilters, setShowFilters] = useState(false);
+    const [showSort, setShowSort] = useState(false);
+    const [filters, setFilters] = useState<FilterState>({
+        compatible_only: true,
+        min_price: '',
+        max_price: '',
+    });
 
     useEffect(() => {
         const controller = new AbortController();
@@ -39,12 +46,19 @@ export default function ComponentSelector({
                 try {
                     const params = new URLSearchParams();
                     params.set('build_id', String(buildId));
-                    params.set('compatible_only', String(compatibleOnly));
                     params.set('sort_by', sortBy);
 
-                    if (search.trim()) params.set('search', search.trim());
-                    if (minPrice.trim()) params.set('min_price', minPrice.trim());
-                    if (maxPrice.trim()) params.set('max_price', maxPrice.trim());
+                    if (search.trim()) {
+                        params.set('search', search.trim());
+                    }
+
+                    Object.entries(filters).forEach(([key, value]) => {
+                        if (value === '' || value === null || value === undefined) {
+                            return;
+                        }
+
+                        params.set(key, String(value));
+                    });
 
                     const response = await apiClient.get(`/builder/category/${category}?${params.toString()}`, {
                         signal: controller.signal,
@@ -68,7 +82,7 @@ export default function ComponentSelector({
             window.clearTimeout(timeoutId);
             controller.abort();
         };
-    }, [buildId, category, compatibleOnly, search, minPrice, maxPrice, sortBy]);
+    }, [buildId, category, filters, search, sortBy]);
 
     return (
         <div className="soft-card border border-[var(--border-strong)] p-4 md:p-5 shadow-[var(--shadow-elevated)] animate-page-fade">
@@ -84,7 +98,7 @@ export default function ComponentSelector({
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr_0.8fr_auto] gap-3 mb-4">
+            <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_auto] gap-3 mb-4">
                 <label className="relative block">
                     <span className="sr-only">Search products</span>
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[color:var(--text-soft)]" />
@@ -97,53 +111,52 @@ export default function ComponentSelector({
                     />
                 </label>
 
-                <label className="block">
-                    <span className="sr-only">Minimum price</span>
-                    <input
-                        type="number"
-                        min="0"
-                        value={minPrice}
-                        onChange={(e) => setMinPrice(e.target.value)}
-                        placeholder="Min price"
-                        className="input-premium"
-                    />
-                </label>
-
-                <label className="block">
-                    <span className="sr-only">Maximum price</span>
-                    <input
-                        type="number"
-                        min="0"
-                        value={maxPrice}
-                        onChange={(e) => setMaxPrice(e.target.value)}
-                        placeholder="Max price"
-                        className="input-premium"
-                    />
-                </label>
-
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 justify-end">
                     <button
                         type="button"
-                        onClick={() => setCompatibleOnly((value) => !value)}
-                        className={`min-h-11 px-4 rounded-xl border text-sm font-semibold inline-flex items-center gap-2 transition-all duration-150 ${compatibleOnly
-                            ? 'bg-[color:var(--primary)] text-white border-transparent shadow-sm'
-                            : 'bg-[var(--surface)] border-[var(--border-strong)] text-[color:var(--text-main)]'
-                            }`}
+                        onClick={() => setShowFilters((value) => !value)}
+                        className="min-h-11 px-4 rounded-xl border text-sm font-semibold inline-flex items-center gap-2 bg-[var(--surface)] border-[var(--border-strong)] text-[color:var(--text-main)]"
                     >
                         <SlidersHorizontal className="w-4 h-4" />
-                        Compatible only
+                        Filters
                     </button>
 
-                    <label className="block min-w-40">
-                        <span className="sr-only">Sort products</span>
-                        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="select-premium min-h-11">
-                            <option value="recommended">Recommended</option>
-                            <option value="price_low">Price: low to high</option>
-                            <option value="price_high">Price: high to low</option>
-                        </select>
-                    </label>
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={() => setShowSort((value) => !value)}
+                            className="min-h-11 px-4 rounded-xl border text-sm font-semibold inline-flex items-center gap-2 bg-[var(--surface)] border-[var(--border-strong)] text-[color:var(--text-main)]"
+                        >
+                            Sort
+                        </button>
+
+                        {showSort && (
+                            <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface)] shadow-lg p-2 z-10">
+                                <button type="button" onClick={() => { setSortBy('recommended'); setShowSort(false); }} className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--surface-soft)]">
+                                    Recommended
+                                </button>
+                                <button type="button" onClick={() => { setSortBy('price_low'); setShowSort(false); }} className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--surface-soft)]">
+                                    Price: low to high
+                                </button>
+                                <button type="button" onClick={() => { setSortBy('price_high'); setShowSort(false); }} className="w-full text-left px-3 py-2 rounded-xl hover:bg-[var(--surface-soft)]">
+                                    Price: high to low
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
+
+            {showFilters && (
+                <div className="mb-4">
+                    <FilterPanel
+                        category={category}
+                        filters={filters}
+                        setFilters={setFilters}
+                        onClose={() => setShowFilters(false)}
+                    />
+                </div>
+            )}
 
             {loading ? (
                 <div className="flex items-center justify-center py-10">
@@ -166,7 +179,7 @@ export default function ComponentSelector({
                                 }}
                                 className={`w-full rounded-2xl border transition-all duration-200 text-left p-3 md:p-4 flex items-start gap-4 ${isSelected
                                     ? 'border-[var(--primary)] bg-[var(--surface-muted)] shadow-sm'
-                                    : 'border-[var(--border-soft)] hover:shadow-md hover:-translate-y-[1px] hover:border-[var(--border-strong)] bg-white'
+                                    : 'border-[var(--border-soft)] hover:shadow-md hover:-translate-y-[1px] hover:border-[var(--border-strong)] bg-[var(--surface)]'
                                     }`}
                             >
                                 <div className="h-[100px] w-[100px] flex-shrink-0 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] overflow-hidden flex items-center justify-center">
@@ -199,7 +212,7 @@ export default function ComponentSelector({
                                             {product.compatible ? 'Compatible' : 'Needs review'}
                                         </span>
                                         {product.compatibility_details?.slice(0, 2).map((detail) => (
-                                            <span key={detail} className="tag-chip bg-[var(--surface-soft)]">
+                                            <span key={detail} className="tag-chip bg-[var(--surface-soft)] border-[var(--border-soft)] text-[color:var(--text-main)]">
                                                 {detail}
                                             </span>
                                         ))}
@@ -213,5 +226,3 @@ export default function ComponentSelector({
         </div>
     );
 }
-
-

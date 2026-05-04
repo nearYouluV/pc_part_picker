@@ -6,6 +6,13 @@ from sqlalchemy.orm import joinedload
 from app.builder_schemas import AddComponentRequest, BuildCreateRequest, BuildDetailResponse, BuildUpdateRequest, ProductRecommendationResponse
 from app.database import get_async_db
 from app.models.base import CategoryEnum
+from app.models.cpu import CPU
+from app.models.gpu import GPU
+from app.models.motherboard import Motherboard
+from app.models.psu import PSU
+from app.models.ram import RAM
+from app.models.storage import StorageSpec
+from app.models.cooling import CoolingSpec
 from app.models.user import User
 from app.models.product import Product
 from app.services.auth_service import get_current_active_user
@@ -14,6 +21,144 @@ from app.utils.scoring_engine import build_context_from_build, rank_category_pro
 
 
 router = APIRouter(prefix="/builder", tags=["builder"])
+
+
+def _apply_numeric_bounds(stmt, column, min_value: int | float | None = None, max_value: int | float | None = None):
+    if min_value is not None:
+        stmt = stmt.where(column >= min_value)
+    if max_value is not None:
+        stmt = stmt.where(column <= max_value)
+    return stmt
+
+
+def _apply_text_match(stmt, column, value: str | None):
+    if value and value.strip():
+        stmt = stmt.where(column.ilike(f"%{value.strip()}%"))
+    return stmt
+
+
+def _apply_category_filters(stmt, category: str, **filters):
+    if category == "cpu":
+        stmt = stmt.join(Product.cpu_spec)
+        stmt = _apply_numeric_bounds(stmt, CPU.cores, filters.get("cores_min"), filters.get("cores_max"))
+        # Frequencies from UI are provided in MHz — stored values are in MHz. Accept as-is.
+        base_clock_min = filters.get("base_clock_min")
+        base_clock_max = filters.get("base_clock_max")
+        boost_clock_min = filters.get("boost_clock_min")
+        boost_clock_max = filters.get("boost_clock_max")
+        if base_clock_min is not None:
+            base_clock_min = float(base_clock_min)
+        if base_clock_max is not None:
+            base_clock_max = float(base_clock_max)
+        if boost_clock_min is not None:
+            boost_clock_min = float(boost_clock_min)
+        if boost_clock_max is not None:
+            boost_clock_max = float(boost_clock_max)
+        stmt = _apply_numeric_bounds(stmt, CPU.base_clock, base_clock_min, base_clock_max)
+        stmt = _apply_numeric_bounds(stmt, CPU.boost_clock, boost_clock_min, boost_clock_max)
+        stmt = _apply_numeric_bounds(stmt, CPU.tdp, filters.get("tdp_min"), filters.get("tdp_max"))
+        stmt = _apply_numeric_bounds(stmt, CPU.l3_cache, filters.get("l3_cache_min"), filters.get("l3_cache_max"))
+        l3_band = filters.get("l3_cache_band")
+        if l3_band == "gt65":
+            stmt = stmt.where(CPU.l3_cache > 65)
+        elif l3_band == "41_64":
+            stmt = stmt.where(CPU.l3_cache.between(41, 64))
+        elif l3_band == "25_40":
+            stmt = stmt.where(CPU.l3_cache.between(25, 40))
+        elif l3_band == "10_24":
+            stmt = stmt.where(CPU.l3_cache.between(10, 24))
+        elif l3_band == "lt10":
+            stmt = stmt.where(CPU.l3_cache < 10)
+        stmt = _apply_text_match(stmt, CPU.socket, filters.get("socket"))
+        stmt = _apply_text_match(stmt, CPU.manufacturer, filters.get("manufacturer"))
+
+    elif category == "gpu":
+        stmt = stmt.join(Product.gpu_spec)
+        stmt = _apply_numeric_bounds(stmt, GPU.vram, filters.get("vram_min"), filters.get("vram_max"))
+        # GPU frequency: UI provides MHz — accept as-is.
+        frequency_min = filters.get("frequency_min")
+        frequency_max = filters.get("frequency_max")
+        if frequency_min is not None:
+            frequency_min = float(frequency_min)
+        if frequency_max is not None:
+            frequency_max = float(frequency_max)
+        stmt = _apply_numeric_bounds(stmt, GPU.frequency, frequency_min, frequency_max)
+        stmt = _apply_numeric_bounds(stmt, GPU.performance, filters.get("performance_min"), filters.get("performance_max"))
+        stmt = _apply_numeric_bounds(stmt, GPU.recommended_power_supply, filters.get("recommended_power_supply_min"), filters.get("recommended_power_supply_max"))
+        stmt = _apply_text_match(stmt, GPU.memory_type, filters.get("memory_type"))
+        stmt = _apply_text_match(stmt, Product.brand, filters.get("brand"))
+
+    elif category == "motherboard":
+        stmt = stmt.join(Product.motherboard_spec)
+        stmt = _apply_text_match(stmt, Motherboard.socket, filters.get("socket"))
+        stmt = _apply_text_match(stmt, Motherboard.chipset, filters.get("chipset"))
+        stmt = _apply_text_match(stmt, Motherboard.ram_type, filters.get("ram_type"))
+        stmt = _apply_numeric_bounds(stmt, Motherboard.max_ram, filters.get("max_ram_min"), filters.get("max_ram_max"))
+        stmt = _apply_numeric_bounds(stmt, Motherboard.memory_slots, filters.get("memory_slots_min"), filters.get("memory_slots_max"))
+        stmt = _apply_numeric_bounds(stmt, Motherboard.m2_slots, filters.get("m2_slots_min"), filters.get("m2_slots_max"))
+        stmt = _apply_numeric_bounds(stmt, Motherboard.sata_ports, filters.get("sata_ports_min"), filters.get("sata_ports_max"))
+        # Memory frequency filters: UI provides MHz — accept as-is.
+        min_mem_freq_min = filters.get("min_memory_frequency_min")
+        min_mem_freq_max = filters.get("min_memory_frequency_max")
+        max_mem_freq_min = filters.get("max_memory_frequency_min")
+        max_mem_freq_max = filters.get("max_memory_frequency_max")
+        if min_mem_freq_min is not None:
+            min_mem_freq_min = float(min_mem_freq_min)
+        if min_mem_freq_max is not None:
+            min_mem_freq_max = float(min_mem_freq_max)
+        if max_mem_freq_min is not None:
+            max_mem_freq_min = float(max_mem_freq_min)
+        if max_mem_freq_max is not None:
+            max_mem_freq_max = float(max_mem_freq_max)
+        stmt = _apply_numeric_bounds(stmt, Motherboard.min_memory_frequency, min_mem_freq_min, min_mem_freq_max)
+        stmt = _apply_numeric_bounds(stmt, Motherboard.max_memory_frequency, max_mem_freq_min, max_mem_freq_max)
+
+    elif category == "ram":
+        stmt = stmt.join(Product.ram_spec)
+        stmt = _apply_numeric_bounds(stmt, RAM.capacity, filters.get("capacity_min"), filters.get("capacity_max"))
+        # RAM frequency: UI provides MHz — accept as-is.
+        ram_freq_min = filters.get("frequency_min")
+        ram_freq_max = filters.get("frequency_max")
+        if ram_freq_min is not None:
+            ram_freq_min = float(ram_freq_min)
+        if ram_freq_max is not None:
+            ram_freq_max = float(ram_freq_max)
+        stmt = _apply_numeric_bounds(stmt, RAM.frequency, ram_freq_min, ram_freq_max)
+        stmt = _apply_numeric_bounds(stmt, RAM.cas_latency, filters.get("cas_latency_min"), filters.get("cas_latency_max"))
+        stmt = _apply_numeric_bounds(stmt, RAM.modules_count, filters.get("modules_count_min"), filters.get("modules_count_max"))
+        stmt = _apply_text_match(stmt, RAM.ram_type, filters.get("ram_type"))
+
+    elif category == "psu":
+        stmt = stmt.join(Product.psu_spec)
+        stmt = _apply_numeric_bounds(stmt, PSU.power, filters.get("power_min"), filters.get("power_max"))
+        stmt = _apply_text_match(stmt, PSU.certification, filters.get("certification"))
+        modularity = filters.get("modularity")
+        if modularity is True:
+            stmt = stmt.where(PSU.modularity.is_(True))
+        elif modularity is False:
+            stmt = stmt.where(PSU.modularity.is_(False))
+
+    elif category == "storage":
+        stmt = stmt.join(Product.storage_spec)
+        stmt = _apply_numeric_bounds(stmt, StorageSpec.capacity, filters.get("capacity_min"), filters.get("capacity_max"))
+        stmt = _apply_numeric_bounds(stmt, StorageSpec.read_speed, filters.get("read_speed_min"), filters.get("read_speed_max"))
+        stmt = _apply_numeric_bounds(stmt, StorageSpec.write_speed, filters.get("write_speed_min"), filters.get("write_speed_max"))
+        stmt = _apply_numeric_bounds(stmt, StorageSpec.rpm, filters.get("rpm_min"), filters.get("rpm_max"))
+        stmt = _apply_text_match(stmt, StorageSpec.interface, filters.get("interface"))
+        stmt = _apply_text_match(stmt, StorageSpec.form_factor, filters.get("form_factor"))
+
+    elif category == "cooler":
+        stmt = stmt.join(Product.cooler_spec)
+        stmt = _apply_numeric_bounds(stmt, CoolingSpec.tdp_support, filters.get("tdp_support_min"), filters.get("tdp_support_max"))
+        stmt = _apply_numeric_bounds(stmt, CoolingSpec.noise_level, filters.get("noise_level_min"), filters.get("noise_level_max"))
+        stmt = _apply_numeric_bounds(stmt, CoolingSpec.fan_count, filters.get("fan_count_min"), filters.get("fan_count_max"))
+        stmt = _apply_numeric_bounds(stmt, CoolingSpec.height, filters.get("height_min"), filters.get("height_max"))
+        stmt = _apply_text_match(stmt, CoolingSpec.cooling_type, filters.get("cooling_type"))
+        socket_support = filters.get("socket_support")
+        if socket_support and socket_support.strip():
+            stmt = stmt.where(CoolingSpec.socket_support.contains([socket_support.strip()]))
+
+    return stmt
 
 
 def serialize_build(build) -> BuildDetailResponse:
@@ -88,6 +233,69 @@ async def list_category_products(
     condition: str | None = Query(default=None, max_length=60),
     min_price: int | None = Query(default=None, ge=0),
     max_price: int | None = Query(default=None, ge=0),
+    cores_min: int | None = Query(default=None, ge=0),
+    cores_max: int | None = Query(default=None, ge=0),
+    base_clock_min: float | None = Query(default=None, ge=0),
+    base_clock_max: float | None = Query(default=None, ge=0),
+    boost_clock_min: float | None = Query(default=None, ge=0),
+    boost_clock_max: float | None = Query(default=None, ge=0),
+    tdp_min: int | None = Query(default=None, ge=0),
+    tdp_max: int | None = Query(default=None, ge=0),
+    l3_cache_min: int | None = Query(default=None, ge=0),
+    l3_cache_max: int | None = Query(default=None, ge=0),
+    l3_cache_band: str | None = Query(default=None, max_length=20),
+    socket: str | None = Query(default=None, max_length=50),
+    manufacturer: str | None = Query(default=None, max_length=80),
+    vram_min: int | None = Query(default=None, ge=0),
+    vram_max: int | None = Query(default=None, ge=0),
+    frequency_min: int | None = Query(default=None, ge=0),
+    frequency_max: int | None = Query(default=None, ge=0),
+    performance_min: int | None = Query(default=None, ge=0),
+    performance_max: int | None = Query(default=None, ge=0),
+    recommended_power_supply_min: int | None = Query(default=None, ge=0),
+    recommended_power_supply_max: int | None = Query(default=None, ge=0),
+    chipset: str | None = Query(default=None, max_length=80),
+    ram_type: str | None = Query(default=None, max_length=30),
+    max_ram_min: int | None = Query(default=None, ge=0),
+    max_ram_max: int | None = Query(default=None, ge=0),
+    memory_slots_min: int | None = Query(default=None, ge=0),
+    memory_slots_max: int | None = Query(default=None, ge=0),
+    m2_slots_min: int | None = Query(default=None, ge=0),
+    m2_slots_max: int | None = Query(default=None, ge=0),
+    sata_ports_min: int | None = Query(default=None, ge=0),
+    sata_ports_max: int | None = Query(default=None, ge=0),
+    min_memory_frequency_min: int | None = Query(default=None, ge=0),
+    min_memory_frequency_max: int | None = Query(default=None, ge=0),
+    max_memory_frequency_min: int | None = Query(default=None, ge=0),
+    max_memory_frequency_max: int | None = Query(default=None, ge=0),
+    capacity_min: int | None = Query(default=None, ge=0),
+    capacity_max: int | None = Query(default=None, ge=0),
+    cas_latency_min: int | None = Query(default=None, ge=0),
+    cas_latency_max: int | None = Query(default=None, ge=0),
+    modules_count_min: int | None = Query(default=None, ge=0),
+    modules_count_max: int | None = Query(default=None, ge=0),
+    certification: str | None = Query(default=None, max_length=80),
+    modularity: bool | None = Query(default=None),
+    power_min: int | None = Query(default=None, ge=0),
+    power_max: int | None = Query(default=None, ge=0),
+    interface: str | None = Query(default=None, max_length=50),
+    form_factor: str | None = Query(default=None, max_length=40),
+    read_speed_min: int | None = Query(default=None, ge=0),
+    read_speed_max: int | None = Query(default=None, ge=0),
+    write_speed_min: int | None = Query(default=None, ge=0),
+    write_speed_max: int | None = Query(default=None, ge=0),
+    rpm_min: int | None = Query(default=None, ge=0),
+    rpm_max: int | None = Query(default=None, ge=0),
+    tdp_support_min: int | None = Query(default=None, ge=0),
+    tdp_support_max: int | None = Query(default=None, ge=0),
+    noise_level_min: int | None = Query(default=None, ge=0),
+    noise_level_max: int | None = Query(default=None, ge=0),
+    fan_count_min: int | None = Query(default=None, ge=0),
+    fan_count_max: int | None = Query(default=None, ge=0),
+    height_min: int | None = Query(default=None, ge=0),
+    height_max: int | None = Query(default=None, ge=0),
+    cooling_type: str | None = Query(default=None, max_length=40),
+    socket_support: str | None = Query(default=None, max_length=50),
     sort_by: str = Query(default="recommended"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_active_user),
@@ -117,6 +325,74 @@ async def list_category_products(
             joinedload(Product.cooler_spec),
         )
         .order_by(Product.price.asc())
+    )
+
+    stmt = _apply_category_filters(
+        stmt,
+        normalized_category,
+        cores_min=cores_min,
+        cores_max=cores_max,
+        base_clock_min=base_clock_min,
+        base_clock_max=base_clock_max,
+        boost_clock_min=boost_clock_min,
+        boost_clock_max=boost_clock_max,
+        tdp_min=tdp_min,
+        tdp_max=tdp_max,
+        l3_cache_min=l3_cache_min,
+        l3_cache_max=l3_cache_max,
+        l3_cache_band=l3_cache_band,
+        socket=socket,
+        manufacturer=manufacturer,
+        vram_min=vram_min,
+        vram_max=vram_max,
+        frequency_min=frequency_min,
+        frequency_max=frequency_max,
+        performance_min=performance_min,
+        performance_max=performance_max,
+        recommended_power_supply_min=recommended_power_supply_min,
+        recommended_power_supply_max=recommended_power_supply_max,
+        chipset=chipset,
+        ram_type=ram_type,
+        max_ram_min=max_ram_min,
+        max_ram_max=max_ram_max,
+        memory_slots_min=memory_slots_min,
+        memory_slots_max=memory_slots_max,
+        m2_slots_min=m2_slots_min,
+        m2_slots_max=m2_slots_max,
+        sata_ports_min=sata_ports_min,
+        sata_ports_max=sata_ports_max,
+        min_memory_frequency_min=min_memory_frequency_min,
+        min_memory_frequency_max=min_memory_frequency_max,
+        max_memory_frequency_min=max_memory_frequency_min,
+        max_memory_frequency_max=max_memory_frequency_max,
+        capacity_min=capacity_min,
+        capacity_max=capacity_max,
+        cas_latency_min=cas_latency_min,
+        cas_latency_max=cas_latency_max,
+        modules_count_min=modules_count_min,
+        modules_count_max=modules_count_max,
+        certification=certification,
+        modularity=modularity,
+        power_min=power_min,
+        power_max=power_max,
+        interface=interface,
+        form_factor=form_factor,
+        read_speed_min=read_speed_min,
+        read_speed_max=read_speed_max,
+        write_speed_min=write_speed_min,
+        write_speed_max=write_speed_max,
+        rpm_min=rpm_min,
+        rpm_max=rpm_max,
+        tdp_support_min=tdp_support_min,
+        tdp_support_max=tdp_support_max,
+        noise_level_min=noise_level_min,
+        noise_level_max=noise_level_max,
+        fan_count_min=fan_count_min,
+        fan_count_max=fan_count_max,
+        height_min=height_min,
+        height_max=height_max,
+        cooling_type=cooling_type,
+        socket_support=socket_support,
     )
 
     if search:
@@ -150,16 +426,30 @@ async def list_category_products(
                 "socket": product.cpu_spec.socket,
                 "tdp": product.cpu_spec.tdp,
                 "cores": product.cpu_spec.cores,
+                "threads": product.cpu_spec.threads,
+                "base_clock": product.cpu_spec.base_clock,
+                "boost_clock": product.cpu_spec.boost_clock,
+                "l3_cache": product.cpu_spec.l3_cache,
                 "performance": product.cpu_spec.performance_score,
                 "graphics_model": product.cpu_spec.graphics_model,
             }
         elif product.motherboard_spec:
             specs = {
+                "name": product.name,
+                "brand": product.brand,
                 "socket": product.motherboard_spec.socket,
+                "chipset": product.motherboard_spec.chipset,
                 "ram_type": product.motherboard_spec.ram_type,
                 "max_ram": product.motherboard_spec.max_ram,
+                "memory_slots": product.motherboard_spec.memory_slots,
+                "pcie_x1_slots": product.motherboard_spec.pcie_x1_slots,
+                "m2_slots": product.motherboard_spec.m2_slots,
+                "sata_ports": product.motherboard_spec.sata_ports,
+                "total_channels": product.motherboard_spec.total_channels,
+                "form_factor": product.motherboard_spec.form_factor,
                 "min_memory_frequency": product.motherboard_spec.min_memory_frequency,
                 "max_memory_frequency": product.motherboard_spec.max_memory_frequency,
+                "sys_fan": product.motherboard_spec.sys_fan,
             }
         elif product.ram_spec:
             specs = {
@@ -168,12 +458,21 @@ async def list_category_products(
                 "capacity": product.ram_spec.capacity,
                 "memory_bandwidth": product.ram_spec.memory_bandwidth,
                 "modules_count": product.ram_spec.modules_count,
+                "cas_latency": product.ram_spec.cas_latency,
+                "timings": product.ram_spec.timings,
+                "voltage": product.ram_spec.voltage,
             }
         elif product.gpu_spec:
             specs = {
+                "name": product.name,
+                "brand": product.brand,
                 "performance": product.gpu_spec.performance,
                 "vram": product.gpu_spec.vram,
+                "frequency": product.gpu_spec.frequency,
+                "memory_type": product.gpu_spec.memory_type,
+                "max_resolution": product.gpu_spec.max_resolution,
                 "recommended_power_supply": product.gpu_spec.recommended_power_supply,
+                "power_connector": product.gpu_spec.power_connector,
             }
         elif product.psu_spec:
             specs = {

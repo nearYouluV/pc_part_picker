@@ -1,12 +1,14 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-import ComponentSelector from '../components/ComponentSelector';
+import ComponentSelector from '../components/ComponentSelector.tsx';
+import BuildCard from '../components/BuildCard.tsx';
 import BuildSummaryPanel from '../components/BuildSummaryPanel';
 import CreateBuildModal from '../components/CreateBuildModal';
 import type { Build, Product } from '../types';
 import { BUILD_GOALS, COMPONENT_CATEGORIES } from '../types';
 import apiClient from '../lib/apiClient';
+import { getUser } from '../lib/auth';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,18 +19,36 @@ export default function BuilderPage() {
 
     const [build, setBuild] = useState<Build | null>(null);
     const [loading, setLoading] = useState(buildId ? true : false);
+    const [builds, setBuilds] = useState<Build[]>([]);
+    const [loadingBuilds, setLoadingBuilds] = useState<boolean>(true);
     const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [newBuildName, setNewBuildName] = useState('');
     const [newBuildBudget, setNewBuildBudget] = useState('');
     const [newBuildGoal, setNewBuildGoal] = useState('balanced');
     const [creating, setCreating] = useState(false);
+    const user = getUser();
 
     useEffect(() => {
         if (buildId) {
             fetchBuild(parseInt(buildId));
         }
+        // also fetch user's builds for dashboard view
+        fetchBuilds();
     }, [buildId]);
+
+    const fetchBuilds = async () => {
+        setLoadingBuilds(true);
+        try {
+            const response = await apiClient.get('/builder/builds');
+            setBuilds(response.data);
+        } catch (error: any) {
+            console.log('Could not fetch builds:', error);
+            setBuilds([]);
+        } finally {
+            setLoadingBuilds(false);
+        }
+    };
 
     const fetchBuild = async (id: number) => {
         setLoading(true);
@@ -93,6 +113,22 @@ export default function BuilderPage() {
         }
     };
 
+    const handleOpenBuild = (build: Build) => {
+        navigate(`/builder?buildId=${build.id}`);
+    };
+
+    const handleDeleteBuild = async (buildId: number) => {
+        if (!confirm('Are you sure you want to delete this build?')) return;
+
+        try {
+            await apiClient.delete(`/builder/${buildId}`);
+            setBuilds(builds.filter((b) => b.id !== buildId));
+            toast.success('Build deleted');
+        } catch (error) {
+            toast.error('Failed to delete build');
+        }
+    };
+
     const handleRemoveComponent = () => {
         // This will be called by BuildSummaryPanel
     };
@@ -118,23 +154,64 @@ export default function BuilderPage() {
                     goals={BUILD_GOALS}
                 />
 
-                <div className="soft-card p-12 text-center">
-                    <h2 className="text-3xl font-semibold mb-4">No Build Selected</h2>
-                    <p className="text-[color:var(--text-soft)] mb-6">Create a new build or select one from your builds to start configuring your PC.</p>
-                    <div className="flex gap-4 justify-center">
-                        <button
-                            onClick={handleCreateNewBuild}
-                            className="min-h-11 btn-primary"
-                        >
-                            Create New Build
-                        </button>
-                        <button
-                            onClick={() => navigate('/dashboard')}
-                            className="min-h-11 btn-secondary"
-                        >
-                            Go to Dashboard
-                        </button>
+                <div className="mb-8">
+                    <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5 mb-8">
+                        <div>
+                            <h1 className="text-4xl font-bold">Dashboard</h1>
+                            <p className="text-sm text-[color:var(--text-soft)] mt-2">Welcome back, {user?.username}! Manage your PC builds here.</p>
+                        </div>
                     </div>
+
+                    {/* Builds Grid */}
+                    {loadingBuilds ? (
+                        <div className="dashboard-builds-grid gap-6">
+                            {Array.from({ length: 6 }).map((_, i) => (
+                                <div key={i} className="soft-card p-6 animate-pulse">
+                                    <div className="flex items-start justify-between mb-4">
+                                        <div className="flex-1">
+                                            <div className="skeleton-line w-48" />
+                                            <div className="skeleton-line w-32 mt-3" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="skeleton-line w-20 h-6" />
+                                        </div>
+                                    </div>
+                                    <div className="skeleton-line w-full h-4 mb-3" />
+                                    <div className="flex gap-2">
+                                        <div className="skeleton-line w-20 h-8 rounded-md" />
+                                        <div className="skeleton-line w-10 h-8 rounded-md" />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : builds.length === 0 ? (
+                        <div className="soft-card p-12 text-center">
+                            <div className="flex flex-col items-center gap-4">
+                                <button
+                                    onClick={() => setShowCreateForm(true)}
+                                    className="h-16 w-16 rounded-full border border-[var(--border-strong)] bg-[var(--surface)] text-[color:var(--primary)] inline-flex items-center justify-center shadow-sm hover:shadow-md hover:-translate-y-[2px] transition-all duration-150"
+                                    aria-label="Create first build"
+                                >
+                                    <Plus className="w-8 h-8" />
+                                </button>
+                                <p className="text-2xl font-semibold">No builds yet</p>
+                                <p className="text-sm text-[color:var(--text-soft)] max-w-md mb-2">Create your first PC build to get started. We'll help with compatible parts and recommendations.</p>
+                                <button
+                                    onClick={() => setShowCreateForm(true)}
+                                    className="inline-flex items-center gap-2 min-h-11 btn-primary"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    Create First Build
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="dashboard-builds-grid gap-6">
+                            {builds.map((b) => (
+                                <BuildCard key={b.id} build={b} onOpen={handleOpenBuild} onDelete={handleDeleteBuild} />
+                            ))}
+                        </div>
+                    )}
                 </div>
             </Layout>
         );

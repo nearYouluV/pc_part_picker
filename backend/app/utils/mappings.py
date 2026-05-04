@@ -66,7 +66,8 @@ SSD_MAPPING = {
     "form_factor": "Form factor",
     "read_speed": "Reading speed",
     "write_speed": "Recording speed",
-    "memory_cells": "Type of memory cells"
+    "memory_cells": "Type of memory cells",
+    "memory_suffix": "Memory size"
 }
 
 HDD_MAPPING = {
@@ -75,7 +76,9 @@ HDD_MAPPING = {
     "form_factor": "Form factor",
     "read_speed": "Data transmission speed",
     "write_speed": "Data transmission speed",
-    "rpm": "Spindle rotation speed"
+    "rpm": "Spindle rotation speed",
+    "memory_suffix": "Memory size"
+
 }
 
 AIR_COOLING_MAPPING = {

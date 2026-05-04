@@ -197,25 +197,25 @@
     width: 100%;
     border-radius: 11px;
     border: 1px solid var(--border-soft);
-    background: #ffffff;
-    color: #13549e;
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-soft) 100%);
+    color: var(--text-main);
     padding: 0.7rem 0.85rem;
     transition: border-color 170ms ease, box-shadow 170ms ease;
-    accent-color: #13549e;
+    accent-color: var(--primary);
   }
 
   .select-premium option {
-    color: #13549e;
-    background: #ffffff;
+    color: var(--text-main);
+    background: var(--surface);
   }
 
   .select-premium option:checked {
     color: #ffffff;
-    background: #13549e;
+    background: var(--primary);
   }
 
   .input-premium::placeholder {
-    color: #13549e;
+    color: color-mix(in srgb, var(--text-soft) 75%, transparent);
   }
 
   .input-premium:focus,

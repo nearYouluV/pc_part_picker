@@ -7,12 +7,15 @@ def extract_features(item: dict) -> dict:
             name = feature.get("name_en")
             if name == 'Color' or 'Accessories' in name:
                 continue
+
             values = feature.get("values_en")  or feature.get("values") # fallback to non-English values if English ones are not available
 
             if not values:
                 continue
-
-            features_map[name] = values[0].get("value")
+            if name == "memory_suffix":
+                features_map[name] = feature.get("suffix_en")
+            else:
+                features_map[name] = values[0].get("value")
 
     return features_map
 

@@ -22,6 +22,20 @@ def to_bool(v):
     if isinstance(v, str):
         return v.lower() in ['yes', 'true', '1', "+"]
     return bool(v)
+
+def get_str(v):
+    if v is None:
+        return None
+
+    result = re.sub(r"\d+", "", str(v))
+
+    return result.strip()
+
+def normalize_size_namings(value):
+    for old, new in {'гб': 'GB', 'тб': 'TB', 'мб': 'MB'}.items():
+        value = value.replace(old, new)
+    return value
+
 def smart_cast(field, value):
     if value is None:
         return None
@@ -35,7 +49,9 @@ def smart_cast(field, value):
         return to_float(value)
     if field in ["modularity"]:
         return to_bool(value)
-
+    if field in ['memory_suffix']:
+        value = get_str(value)
+        return normalize_size_namings(value.lower())
     if "шт." in str(value):
         value = str(value).replace("шт.", "pcs.")
     return value

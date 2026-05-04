@@ -51,7 +51,7 @@ export default function CreateBuildModal({
         setStep(1);
         setHoverIndex(null);
         setSelectedIndex(nextIndex >= 0 ? nextIndex : 0);
-    }, [show, normalizedGoal, goalLabels]);
+    }, [show]);
 
     // keep prop `goal` in sync when selectedIndex changes
     React.useEffect(() => {

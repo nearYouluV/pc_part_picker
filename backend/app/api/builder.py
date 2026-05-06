@@ -74,7 +74,14 @@ def _apply_category_filters(stmt, category: str, **filters):
 
     elif category == "gpu":
         stmt = stmt.join(Product.gpu_spec)
-        stmt = _apply_numeric_bounds(stmt, GPU.vram, filters.get("vram_min"), filters.get("vram_max"))
+        # UI sends VRAM in GB, while GPU.vram is stored in MB.
+        vram_min = filters.get("vram_min")
+        vram_max = filters.get("vram_max")
+        if vram_min is not None:
+            vram_min = int(vram_min) * 1024
+        if vram_max is not None:
+            vram_max = int(vram_max) * 1024
+        stmt = _apply_numeric_bounds(stmt, GPU.vram, vram_min, vram_max)
         # GPU frequency: UI provides MHz — accept as-is.
         frequency_min = filters.get("frequency_min")
         frequency_max = filters.get("frequency_max")

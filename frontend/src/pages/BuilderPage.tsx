@@ -32,6 +32,11 @@ export default function BuilderPage() {
     useEffect(() => {
         if (buildId) {
             fetchBuild(parseInt(buildId));
+        } else {
+            // When navigating to /builder without buildId, ensure previous build view is cleared.
+            setBuild(null);
+            setSelectedCategory(null);
+            setLoading(false);
         }
         // also fetch user's builds for dashboard view
         fetchBuilds();
@@ -57,7 +62,7 @@ export default function BuilderPage() {
             setBuild(response.data);
         } catch (error) {
             toast.error('Failed to load build');
-            navigate('/dashboard');
+            navigate('/builder');
         } finally {
             setLoading(false);
         }
@@ -160,6 +165,13 @@ export default function BuilderPage() {
                             <h1 className="text-4xl font-bold">Dashboard</h1>
                             <p className="text-sm text-[color:var(--text-soft)] mt-2">Welcome back, {user?.username}! Manage your PC builds here.</p>
                         </div>
+                        <button
+                            onClick={handleCreateNewBuild}
+                            className="inline-flex items-center gap-2 min-h-11 btn-primary"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Create a build
+                        </button>
                     </div>
 
                     {/* Builds Grid */}
@@ -274,7 +286,7 @@ export default function BuilderPage() {
                         <p className="text-sm text-[color:var(--text-soft)] mt-2">Configure your PC by selecting components for each category.</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <button onClick={() => handleCreateNewBuild()} className="min-h-11 btn-secondary">New Build</button>
+                        <button onClick={() => handleCreateNewBuild()} className="min-h-11 btn-secondary">Create a build</button>
                         <button onClick={() => { if (build) { /* save handled in summary */ } }} className="min-h-11 btn-accent">Preview</button>
                     </div>
                 </div>

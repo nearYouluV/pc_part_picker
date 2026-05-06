@@ -62,8 +62,8 @@ export default function CreateBuildModal({
     if (!show) return null;
 
     return (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="soft-card w-full max-w-2xl p-6 shadow-xl">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="w-full max-w-2xl p-6 shadow-xl rounded-2xl border border-[var(--border-strong)] bg-[color:var(--bg-page)]">
                 <div className="flex items-center justify-between mb-4">
                     <h3 className="text-xl font-semibold">{step === 1 ? 'Create New Build' : 'Goal'}</h3>
                     <button onClick={onClose} className="btn-secondary h-9 w-9 inline-flex items-center justify-center !p-0">

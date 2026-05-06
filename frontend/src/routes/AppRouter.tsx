@@ -66,7 +66,7 @@ export default function AppRouter() {
                     path="/"
                     element={
                         isLoggedIn() ? (
-                            <Navigate to="/dashboard" replace />
+                            <Navigate to="/builder" replace />
                         ) : (
                             <Navigate to="/login" replace />
                         )

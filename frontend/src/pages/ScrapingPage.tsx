@@ -2,7 +2,7 @@ import Layout from '../components/Layout';
 import ScrapingPanel from '../components/ScrapingPanel';
 
 export default function ScrapingPage() {
-    const categories = ['CPU', 'GPU', 'RAM', 'SSD', 'HDD', 'Motherboard', 'PSU', 'Air Cooling', 'Liquid Cooling'];
+    const categories = ['CPU', 'GPU', 'RAM', 'SSD', 'HDD', 'Motherboard', 'PSU', 'Air Cooling', 'Water Cooling'];
 
     return (
         <Layout>

@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 from typing import Type, TypeVar, List, Optional, Any, Dict
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import String, Enum, JSON, case, select
@@ -6,8 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import joinedload
 
 from app.logging_config import get_logger
-from app.models import product, cpu, gpu, motherboard, ram, psu, cooling, storage
-
+from app.models import product, cpu, gpu, motherboard, ram, psu, cooling, storage, Chats, ChatMessage
 logger = get_logger(__name__)
 
 ModelType = TypeVar("ModelType")
@@ -235,3 +236,72 @@ class DatabaseService:
             c for c in coolers
             if socket in (c.socket_support or "")
         ]
+
+
+class ChatService:
+    """Service layer for chat operations"""
+
+    @staticmethod
+    async def create_chat(db: AsyncSession, user_id: int, result_id: int = None):
+        """Create a new chat session"""
+        chat = Chats(
+            id=uuid4(),
+            user_id=user_id,
+            result_id=result_id,
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(chat)
+        await db.commit()
+        await db.refresh(chat)
+        return chat
+
+    @staticmethod
+    async def get_or_create_chat_for_result(db: AsyncSession, user_id: int, result_id: int):
+        """Get or create a chat session for a specific result"""
+        result = await db.execute(
+            select(Chats)
+            .where(Chats.user_id == user_id, Chats.result_id == result_id)
+        )
+        chat = result.scalar_one_or_none()
+
+        if not chat:
+            chat = await ChatService.create_chat(db, user_id, result_id)
+
+        return chat
+
+    @staticmethod
+    async def create_message(
+            db: AsyncSession,
+            chat_id: str,
+            message: str,
+            role: str = "user",
+            active_indices: list = None) -> ChatMessage:
+        """Create a new chat message"""
+        msg = ChatMessage(
+            id=uuid4(),
+            chat_id=chat_id,
+            role=role,
+            content=message,
+            selected_indices=active_indices or [],
+            created_at=datetime.now(timezone.utc)
+        )
+        db.add(msg)
+        await db.commit()
+        await db.refresh(msg)
+        return msg
+
+    @staticmethod
+    async def get_chat_messages(db: AsyncSession, user_id: int, chat_id: str):
+        """Get chat messages for a specific chat session"""
+        if not chat_id:
+            return []
+
+        # Get all messages for this chat
+        result = await db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.chat_id == chat_id)
+            .order_by(ChatMessage.created_at.asc())
+        )
+
+        messages = result.scalars().all()
+        return [{"role": m.role, "content": m.content, "selected_indices": m.selected_indices or []} for m in messages]

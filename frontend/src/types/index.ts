@@ -8,6 +8,7 @@ export interface Product {
     image?: string | null;
     brand?: string | null;
     subcategory?: string | null;
+    specs?: Record<string, string | number | boolean | null | undefined>;
     score?: number;
     compatible?: boolean;
     compatibility_details?: string[];
@@ -52,8 +53,7 @@ export const COMPONENT_CATEGORIES = [
     'gpu',
     'psu',
     'storage',
-    'air-cooling',
-    'water-cooling',
+    'cooler',
 ];
 
 export const BUILD_GOALS = ['esports', 'aaa', 'office', 'balanced'];
@@ -66,5 +66,6 @@ export const SCRAPING_CATEGORIES = [
     'hdd',
     'motherboard',
     'psu',
-    'cooler',
+    'air_cooling',
+    'liquid_cooling',
 ];

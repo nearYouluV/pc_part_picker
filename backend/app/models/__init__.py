@@ -9,7 +9,7 @@ from .psu import PSU
 from .storage import StorageSpec
 from .cooling import CoolingSpec
 from .build import PCBuild, BuildComponent, BuildGoalEnum
-
+from .chats import Chats, ChatMessage
 
 __all__ = [
 	"Base",
@@ -26,4 +26,6 @@ __all__ = [
 	"PCBuild",
 	"BuildComponent",
 	"BuildGoalEnum",
+    "Chats",
+	"ChatMessage"
 ]

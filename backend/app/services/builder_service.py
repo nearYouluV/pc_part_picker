@@ -15,6 +15,7 @@ CATEGORY_TO_ENUM = {
     "storage": CategoryEnum.STORAGE,
     "motherboard": CategoryEnum.MOTHERBOARD,
     "psu": CategoryEnum.PSU,
+    "cooler": CategoryEnum.COOLER,
 }
 
 
@@ -196,6 +197,31 @@ class BuilderService:
         await self.db.delete(build)
         await self.db.commit()
 
+    @staticmethod
+    async def get_build_static(db: AsyncSession, build_id: int) -> PCBuild | None:
+        """Static method to get a build by ID (used by AI endpoints)"""
+        result = await db.execute(
+            select(PCBuild)
+            .where(PCBuild.id == build_id)
+            .options(
+                joinedload(PCBuild.components).joinedload(BuildComponent.product),
+                joinedload(PCBuild.components).joinedload(BuildComponent.product).joinedload(Product.cpu_spec),
+                joinedload(PCBuild.components).joinedload(BuildComponent.product).joinedload(Product.gpu_spec),
+                joinedload(PCBuild.components).joinedload(BuildComponent.product).joinedload(Product.motherboard_spec),
+                joinedload(PCBuild.components).joinedload(BuildComponent.product).joinedload(Product.ram_spec),
+                joinedload(PCBuild.components).joinedload(BuildComponent.product).joinedload(Product.psu_spec),
+                joinedload(PCBuild.components).joinedload(BuildComponent.product).joinedload(Product.storage_spec),
+                joinedload(PCBuild.components).joinedload(BuildComponent.product).joinedload(Product.cooler_spec),
+            )
+        )
+        return result.unique().scalar_one_or_none()
+
+    async def add_component_to_build(self, build_id: int, category: str, product_id: int) -> None:
+        """Add or replace a component in a build (used by AI endpoints)"""
+        user_id = (await self.db.get(PCBuild, build_id)).user_id
+        await self.add_or_replace_component(build_id, user_id, category, product_id)
+
+
 
 def build_warnings(build: PCBuild) -> list[str]:
     warnings: list[str] = []
@@ -207,6 +233,7 @@ def build_warnings(build: PCBuild) -> list[str]:
     ram_component = components_by_category.get("ram")
     psu_component = components_by_category.get("psu")
     gpu_component = components_by_category.get("gpu")
+    cooler_component = components_by_category.get("cooler")
 
     cpu_socket = None
     motherboard_socket = None
@@ -261,5 +288,22 @@ def build_warnings(build: PCBuild) -> list[str]:
             warnings.append(
                 f"PSU power may be insufficient: {psu_power}W selected, at least {required_power}W recommended"
             )
+
+    if cooler_component and cooler_component.product and cooler_component.product.cooler_spec:
+        cooler_tdp_support = cooler_component.product.cooler_spec.tdp_support or 0
+        cooler_type = str(cooler_component.product.cooler_spec.cooling_type or "").lower()
+
+        cpu_tdp = 0
+        if cpu_component and cpu_component.product and cpu_component.product.cpu_spec:
+            cpu_tdp = cpu_component.product.cpu_spec.tdp or 0
+
+        required_cooler_tdp = cpu_tdp + 20
+        if cpu_tdp and cooler_tdp_support and cooler_tdp_support < required_cooler_tdp:
+            warnings.append(
+                f"Cooler may be insufficient: {cooler_tdp_support}W support selected, at least {required_cooler_tdp}W recommended"
+            )
+
+        if cpu_tdp > 150 and cooler_type and "air" in cooler_type:
+            warnings.append("High CPU TDP detected (>150W): liquid cooling is recommended over air cooling")
 
     return warnings

@@ -56,7 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api")
-# app.include_router(chat.router, prefix="/api", dependencies=[Depends(get_current_active_user)])
+app.include_router(chat.router, prefix="/api")
 app.include_router(scraping.router)
 app.include_router(builder.router)
 

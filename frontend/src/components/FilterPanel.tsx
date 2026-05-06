@@ -287,7 +287,11 @@ export default function FilterPanel({ category, filters, setFilters, onClose }: 
                             <input type="number" min={0} value={inputValue(filters.height_max)} onChange={(e) => update({ height_max: e.target.value })} className="input-premium" />
                         </Field>
                         <Field label="Cooling type">
-                            <input type="text" value={inputValue(filters.cooling_type)} onChange={(e) => update({ cooling_type: e.target.value })} className="input-premium" />
+                            <select value={inputValue(filters.cooling_type)} onChange={(e) => update({ cooling_type: e.target.value })} className="select-premium w-full">
+                                <option value="">Any</option>
+                                <option value="AIR">Air</option>
+                                <option value="LIQUID">Water</option>
+                            </select>
                         </Field>
                         <Field label="Socket support">
                             <input type="text" value={inputValue(filters.socket_support)} onChange={(e) => update({ socket_support: e.target.value })} className="input-premium" />

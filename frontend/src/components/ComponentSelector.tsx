@@ -26,6 +26,7 @@ export default function ComponentSelector({
     buildGoal,
     buildBudget,
 }: ComponentSelectorProps) {
+    const categoryLabel = category === 'cooler' ? 'Cooling' : category;
     const [products, setProducts] = useState<ComponentRecommendation[]>([]);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
@@ -88,7 +89,7 @@ export default function ComponentSelector({
         <div className="soft-card border border-[var(--border-strong)] p-4 md:p-5 shadow-[var(--shadow-elevated)] animate-page-fade">
             <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
-                    <h2 className="text-xl font-semibold capitalize">Select {category}</h2>
+                    <h2 className="text-xl font-semibold capitalize">Select {categoryLabel}</h2>
                     <p className="text-sm text-[color:var(--text-soft)] mt-1">
                         Ranked for your {buildGoal} build{buildBudget ? ` and budget of ₴${buildBudget}` : ''}.
                     </p>
@@ -163,12 +164,22 @@ export default function ComponentSelector({
                     <Loader2 className="w-6 h-6 animate-spin text-[color:var(--text-soft)]" />
                 </div>
             ) : products.length === 0 ? (
-                <p className="text-center text-[color:var(--text-soft)] py-10">No products available for {category} with the current filters.</p>
+                <p className="text-center text-[color:var(--text-soft)] py-10">No products available for {categoryLabel} with the current filters.</p>
             ) : (
                 <div className="space-y-3 max-h-[34rem] overflow-auto pr-1">
                     {products.map((product) => {
                         const isSelected = selectedProduct?.product_id === product.product_id;
                         const imageSrc = product.image_small || product.image || '';
+                        const psuCertificationRaw = category === 'psu' ? String(product.specs?.certification ?? '').trim() : '';
+                        const psuCertification = psuCertificationRaw.replace(/^80\+\s*/i, '');
+                        const psuModularity = category === 'psu' ? product.specs?.modularity : undefined;
+                        const psuPower = category === 'psu' ? product.specs?.power : undefined;
+                        const modularityLabel =
+                            psuModularity === true
+                                ? 'Fully/Semi Modular'
+                                : psuModularity === false
+                                    ? 'Non-modular'
+                                    : null;
 
                         return (
                             <button
@@ -211,6 +222,21 @@ export default function ComponentSelector({
                                         <span className={`tag-chip ${product.compatible ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
                                             {product.compatible ? 'Compatible' : 'Needs review'}
                                         </span>
+                                        {category === 'psu' && psuPower !== undefined && psuPower !== null && (
+                                            <span className="tag-chip bg-[var(--surface-soft)] border-[var(--border-soft)] text-[color:var(--text-main)]">
+                                                {psuPower}W
+                                            </span>
+                                        )}
+                                        {category === 'psu' && psuCertification && (
+                                            <span className="tag-chip bg-[var(--surface-soft)] border-[var(--border-soft)] text-[color:var(--text-main)]">
+                                                80+ {psuCertification}
+                                            </span>
+                                        )}
+                                        {category === 'psu' && modularityLabel && (
+                                            <span className="tag-chip bg-[var(--surface-soft)] border-[var(--border-soft)] text-[color:var(--text-main)]">
+                                                {modularityLabel}
+                                            </span>
+                                        )}
                                         {product.compatibility_details?.slice(0, 2).map((detail) => (
                                             <span key={detail} className="tag-chip bg-[var(--surface-soft)] border-[var(--border-soft)] text-[color:var(--text-main)]">
                                                 {detail}

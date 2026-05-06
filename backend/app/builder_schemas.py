@@ -3,7 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-ALLOWED_BUILD_CATEGORIES = {"cpu", "gpu", "ram", "storage", "motherboard", "psu"}
+ALLOWED_BUILD_CATEGORIES = {"cpu", "gpu", "ram", "storage", "motherboard", "psu", "cooler"}
 ALLOWED_BUILD_GOALS = {"esports", "aaa", "office", "balanced"}
 
 
@@ -56,6 +56,7 @@ class ProductRecommendationResponse(BaseModel):
     image: str | None = None
     brand: str | None = None
     subcategory: str | None = None
+    specs: dict[str, object] = Field(default_factory=dict)
     score: float
     compatible: bool
     compatibility_details: list[str]

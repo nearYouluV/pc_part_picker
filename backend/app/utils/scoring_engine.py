@@ -86,6 +86,7 @@ def _component_specs(component: Any) -> dict[str, Any]:
         return {
             "power": getattr(psu_spec, "power", None),
             "certification": getattr(psu_spec, "certification", None),
+            "modularity": getattr(psu_spec, "modularity", None),
         }
 
     cooler_spec = getattr(component, "cooler_spec", None)
@@ -105,6 +106,25 @@ def _int_or_default(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _ceil_to_step(value: int, step: int = 50) -> int:
+    if value <= 0:
+        return 0
+    if step <= 0:
+        return value
+    return ((value + step - 1) // step) * step
+
+
+def _estimate_psu_power_window(cpu_tdp: Any, gpu_recommended_power: Any) -> tuple[int, int, int]:
+    cpu_tdp_value = _int_or_default(cpu_tdp, 0)
+    gpu_recommended_value = _int_or_default(gpu_recommended_power, 0)
+
+    estimated_required = max(150 + cpu_tdp_value, gpu_recommended_value)
+    recommended_min = _ceil_to_step(max(estimated_required, estimated_required + 50))
+    recommended_max = _ceil_to_step(max(recommended_min, estimated_required + 250))
+
+    return estimated_required, recommended_min, recommended_max
 
 
 def _extract_ram_cas_latency(specs: dict[str, Any], ram_name: str) -> int:
@@ -630,6 +650,7 @@ def build_context_from_build(build) -> dict[str, dict[str, Any]]:
             specs = {
                 "power": product.psu_spec.power,
                 "certification": product.psu_spec.certification,
+                "modularity": product.psu_spec.modularity,
             }
         elif getattr(product, "storage_spec", None):
             specs = {
@@ -825,19 +846,20 @@ def evaluate_component_compatibility(category: str, candidate: dict[str, Any], b
             details.append("Power needs will be checked against the selected PSU")
 
     elif category == "psu":
-        required_power = 150
         cpu_tdp = cpu.get("tdp") if cpu else None
         gpu_required = gpu.get("recommended_power_supply") if gpu else None
-
-        if cpu_tdp:
-            required_power += cpu_tdp
-        if gpu_required:
-            required_power = max(required_power, gpu_required)
+        required_power, recommended_min, recommended_max = _estimate_psu_power_window(cpu_tdp, gpu_required)
 
         psu_power = specs.get("power")
         if psu_power:
             if psu_power >= required_power:
-                details.append(f"Provides {psu_power}W for an estimated {required_power}W requirement")
+                details.append(
+                    f"Provides {psu_power}W for an estimated {required_power}W requirement (recommended range: {recommended_min}-{recommended_max}W)"
+                )
+                if psu_power > recommended_max:
+                    details.append(
+                        f"Overkill for this build target: {psu_power}W is above the recommended max of about {recommended_max}W"
+                    )
             else:
                 compatible = False
                 details.append(_compatibility_message("Power", False, f"{required_power}W", f"{psu_power}W"))
@@ -854,6 +876,7 @@ def evaluate_component_compatibility(category: str, candidate: dict[str, Any], b
         cpu_tdp = cpu.get("tdp") if cpu else None
         supported_sockets = specs.get("socket_support") or []
         tdp_support = specs.get("tdp_support")
+        cooling_type = str(specs.get("cooling_type") or "").lower()
 
         if cpu_socket and supported_sockets:
             if cpu_socket in supported_sockets:
@@ -863,11 +886,15 @@ def evaluate_component_compatibility(category: str, candidate: dict[str, Any], b
                 details.append(f"Does not list CPU socket {cpu_socket} in supported sockets")
 
         if cpu_tdp and tdp_support:
-            if tdp_support >= cpu_tdp:
-                details.append(f"Covers CPU TDP of {cpu_tdp}W")
+            required_tdp_support = cpu_tdp + 20
+            if tdp_support >= required_tdp_support:
+                details.append(f"Covers CPU TDP headroom target: {tdp_support}W support for {cpu_tdp}W CPU (target: {required_tdp_support}W+)")
             else:
                 compatible = False
-                details.append(f"TDP support {tdp_support}W is below CPU TDP {cpu_tdp}W")
+                details.append(f"TDP support {tdp_support}W is below recommended {required_tdp_support}W (CPU TDP {cpu_tdp}W + 20W headroom)")
+
+        if cpu_tdp and cpu_tdp > 150 and cooling_type and "air" in cooling_type:
+            details.append("High CPU TDP detected (>150W): liquid cooling is recommended; air cooling may be insufficient")
 
         if not details:
             details.append("Compatible with the current build")
@@ -985,6 +1012,30 @@ def rank_category_products(
             elif goal != "office" and total_capacity > 32:
                 compatibility_details.append(
                     "RAM recommendation note: 32GB is the default sweet spot; higher capacities are supported but ranked lower by default"
+                )
+
+        if category == "psu":
+            cpu_tdp = build_context.get("cpu", {}).get("tdp") if build_context.get("cpu") else None
+            gpu_required = build_context.get("gpu", {}).get("recommended_power_supply") if build_context.get("gpu") else None
+            _, _, recommended_max = _estimate_psu_power_window(cpu_tdp, gpu_required)
+
+            psu_power = _int_or_default(specs.get("power"), 0)
+            if psu_power and psu_power > recommended_max:
+                overkill_watts = psu_power - recommended_max
+                overkill_penalty = min(120, max(25, overkill_watts // 5))
+                score -= overkill_penalty
+                compatibility_details.append(
+                    f"Recommendation note: {psu_power}W is above the ideal ceiling (~{recommended_max}W) for this build"
+                )
+
+        if category == "cooler":
+            cpu_tdp = _int_or_default(build_context.get("cpu", {}).get("tdp") if build_context.get("cpu") else None, 0)
+            cooling_type = str(specs.get("cooling_type") or "").lower()
+
+            if cpu_tdp > 150 and "air" in cooling_type:
+                score -= 45
+                compatibility_details.append(
+                    "Recommendation note: CPU TDP is above 150W, so liquid cooling is preferred over air cooling"
                 )
 
         ranked.append(

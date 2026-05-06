@@ -160,7 +160,15 @@ def _apply_category_filters(stmt, category: str, **filters):
         stmt = _apply_numeric_bounds(stmt, CoolingSpec.noise_level, filters.get("noise_level_min"), filters.get("noise_level_max"))
         stmt = _apply_numeric_bounds(stmt, CoolingSpec.fan_count, filters.get("fan_count_min"), filters.get("fan_count_max"))
         stmt = _apply_numeric_bounds(stmt, CoolingSpec.height, filters.get("height_min"), filters.get("height_max"))
-        stmt = _apply_text_match(stmt, CoolingSpec.cooling_type, filters.get("cooling_type"))
+        cooling_type_filter = filters.get("cooling_type")
+        if cooling_type_filter and str(cooling_type_filter).strip():
+            cooling_type_text = str(cooling_type_filter).strip().lower()
+            if cooling_type_text in {"water", "liquid", "aio"}:
+                stmt = stmt.where(CoolingSpec.cooling_type.ilike("%liquid%"))
+            elif cooling_type_text in {"air"}:
+                stmt = stmt.where(CoolingSpec.cooling_type.ilike("%air%"))
+            else:
+                stmt = _apply_text_match(stmt, CoolingSpec.cooling_type, str(cooling_type_filter))
         socket_support = filters.get("socket_support")
         if socket_support and socket_support.strip():
             stmt = stmt.where(CoolingSpec.socket_support.contains([socket_support.strip()]))
@@ -485,6 +493,7 @@ async def list_category_products(
             specs = {
                 "power": product.psu_spec.power,
                 "certification": product.psu_spec.certification,
+                "modularity": product.psu_spec.modularity,
             }
         elif product.storage_spec:
             specs = {

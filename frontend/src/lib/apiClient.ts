@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
+import type { Product } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -36,5 +37,50 @@ apiClient.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+
+// AI Build Methods
+export const aiBuildAPI = {
+    async generateBuild(buildId: number, budget: number, goal: string, candidates: Record<string, Array<Product>>, selectedComponents?: Record<string, number>) {
+        const response = await apiClient.post('/api/ai/build', {
+            build_id: buildId,
+            user_config: { budget, goal },
+            candidates: candidates,
+            selected_components: selectedComponents,
+        });
+        return response.data;
+    },
+};
+
+// AI Chat Methods
+export const aiChatAPI = {
+    async createChat(buildId: number) {
+        const response = await apiClient.post('/api/ai/chat', {
+            build_id: buildId,
+        });
+        return response.data;
+    },
+
+    async sendMessage(chatId: string, message: string, promptSource: string = 'chat') {
+        const response = await apiClient.post('/api/ai/chat/message', {
+            chat_id: chatId,
+            message,
+            prompt_source: promptSource,
+        });
+        return response.data;
+    },
+
+    async getHistory(chatId: string) {
+        const response = await apiClient.get(`/api/ai/chat/history/${chatId}`);
+        return response.data;
+    },
+};
+
+// AI Task Methods
+export const aiTaskAPI = {
+    async getTaskStatus(taskId: string) {
+        const response = await apiClient.get(`/api/ai/task/${taskId}`);
+        return response.data;
+    },
+};
 
 export default apiClient;

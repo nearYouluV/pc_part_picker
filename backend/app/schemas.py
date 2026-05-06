@@ -5,7 +5,7 @@ from datetime import datetime
 
 
 class ChatCreateRequest(BaseModel):
-    result_id: Optional[int] = None
+    build_id: int
 
 
 class ChatRequest(BaseModel):
@@ -20,44 +20,46 @@ class ChatResponse(BaseModel):
     score: Optional[int] = None
     confidence: Optional[int] = None
 
-
-class IndexSelectRequest(BaseModel):
-    chat_id: UUID
-    index_name: str
-
-
-class PromptSelectRequest(BaseModel):
-    chat_id: UUID
-    prompt_source: str
+class TaskResponse(BaseModel):
+    task_id: str
+    status: str
 
 
-class CreatePromptRequest(BaseModel):
-    id: Optional[int] = None
-    source: str
-    prompt: str
-    instructions: str
-    temperature: float = Field(0.7, ge=0.0, le=1.0)
-    version: int = 1
+class TaskStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
 
 
-class PromptResponse(BaseModel):
+class ComponentCandidate(BaseModel):
     id: int
-    source: str
-    version: int
-    created_at: datetime
-    updated_at: Optional[datetime] = None
+    name: str
+    price: float
+    category: str
+    specs: Dict[str, Any]
+    score: float
 
 
-class DetailedPromptResponse(BaseModel):
-    id: int
-    source: str
-    prompt: str
-    instructions: str
-    temperature: float
-    version: int
-    is_active: bool
-    created_at: datetime
-    updated_at: Optional[datetime] = None
+class BuildUserConfig(BaseModel):
+    budget: int
+    goal: str
 
-    class Config:
-        from_attributes = True
+
+class AIBuildRequest(BaseModel):
+    build_id: int
+    user_config: BuildUserConfig
+    candidates: Dict[str, List[ComponentCandidate]]
+    selected_components: Optional[Dict[str, int]] = None
+
+
+class AIBuildResponse(BaseModel):
+    build: Dict[str, int]
+    summary: str
+
+
+class AIChatFollowupRequest(BaseModel):
+    chat_id: UUID
+    current_build: Dict[str, Any]
+    candidates: Dict[str, List[ComponentCandidate]]
+    question: str

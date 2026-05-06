@@ -5,11 +5,15 @@ import ComponentSelector from '../components/ComponentSelector.tsx';
 import BuildCard from '../components/BuildCard.tsx';
 import BuildSummaryPanel from '../components/BuildSummaryPanel';
 import CreateBuildModal from '../components/CreateBuildModal';
+import { AIBuildButton } from '../components/ai/AIBuildButton';
+import { AIChatFullscreen } from '../components/ai/AIChatFullscreen';
+import { useAIBuild } from '../hooks/useAIBuild';
+import { useAIChat } from '../hooks/useAIChat';
 import type { Build, Product } from '../types';
 import { BUILD_GOALS, COMPONENT_CATEGORIES } from '../types';
 import apiClient from '../lib/apiClient';
 import { getUser } from '../lib/auth';
-import { Plus } from 'lucide-react';
+import { Plus, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function BuilderPage() {
@@ -27,7 +31,85 @@ export default function BuilderPage() {
     const [newBuildBudget, setNewBuildBudget] = useState('');
     const [newBuildGoal, setNewBuildGoal] = useState('balanced');
     const [creating, setCreating] = useState(false);
+
+    // AI hooks
+    const { loading: aiBuildLoading, generateBuild } = useAIBuild();
+    const {
+        chatId,
+        messages,
+        loading: chatLoading,
+        createChat,
+        sendMessage,
+        clearChat,
+    } = useAIChat();
+    const [showAIChat, setShowAIChat] = useState(false);
+
     const user = getUser();
+
+    const categoryLabel = (category: string) => (category === 'cooler' ? 'Cooling' : category.charAt(0).toUpperCase() + category.slice(1));
+
+    // AI Build handler
+    const handleAIBuild = async () => {
+        if (!build || !build.budget || !build.goal) {
+            toast.error('Please set budget and goal first');
+            return;
+        }
+
+        try {
+            // Prepare candidates - get components from the builder recommendations
+            // For now, we'll use empty candidates and let the backend provide them
+            const candidates: Record<string, Product[]> = {};
+
+            // Get selected components map
+            const selectedComponents: Record<string, number> = {};
+            for (const [category, component] of Object.entries(build.selected_components)) {
+                if (component?.product_id) {
+                    selectedComponents[category] = component.product_id;
+                }
+            }
+
+            const result = await generateBuild(
+                build.id,
+                build.budget,
+                build.goal,
+                candidates,
+                selectedComponents
+            );
+
+            if (result) {
+                // Refresh build to see the new components
+                await fetchBuild(build.id);
+                toast.success('AI build generated successfully!');
+            }
+        } catch (error) {
+            toast.error('Failed to generate AI build');
+        }
+    };
+
+    // AI Chat handlers
+    const handleOpenAIChat = async () => {
+        if (!build) return;
+
+        if (!chatId) {
+            const newChatId = await createChat(build.id);
+            if (newChatId) {
+                setShowAIChat(true);
+            }
+        } else {
+            setShowAIChat(true);
+        }
+    };
+
+    const handleSendAIMessage = async (message: string) => {
+        await sendMessage(message);
+    };
+
+    useEffect(() => {
+        // Reset chat when build changes
+        if (build?.id) {
+            clearChat();
+        }
+    }, [build?.id]);
 
     useEffect(() => {
         if (buildId) {
@@ -107,7 +189,7 @@ export default function BuilderPage() {
                 product_id: product.product_id,
             });
             setBuild(response.data);
-            toast.success(`${selectedCategory} added successfully!`);
+            toast.success(`${categoryLabel(selectedCategory || '')} added successfully!`);
             // Keep selector open briefly to show confirmation
             setTimeout(() => {
                 setSelectedCategory(null);
@@ -299,12 +381,13 @@ export default function BuilderPage() {
                         const selectedComp = build?.selected_components[category];
                         const isMissing = !selectedComp;
                         const isExpanded = selectedCategory === category;
+                        const label = categoryLabel(category);
 
                         return (
                             <div key={category} className="soft-card p-6 border border-[var(--border-soft)] rounded-xl transition-all duration-200 hover:-translate-y-[2px] hover:shadow-[var(--shadow-elevated)]">
                                 <div className="flex items-start justify-between mb-4 gap-4">
                                     <div className="flex-1 min-w-0">
-                                        <h3 className="text-lg font-semibold capitalize truncate">{category}</h3>
+                                        <h3 className="text-lg font-semibold truncate">{label}</h3>
                                         <p className="text-sm text-[color:var(--text-soft)] mt-2 truncate">{selectedComp ? selectedComp.name : 'No component selected'}</p>
                                     </div>
                                     {selectedComp && (
@@ -326,7 +409,7 @@ export default function BuilderPage() {
                                     className={`w-full min-h-11 font-medium flex items-center justify-center gap-2 ${isMissing ? 'btn-primary' : 'btn-secondary'} transition-all duration-150`}
                                 >
                                     <Plus className="w-4 h-4" />
-                                    {selectedComp ? 'Change' : 'Select'} {category}
+                                    {selectedComp ? 'Change' : 'Select'} {label}
                                 </button>
 
                                 {isExpanded && build?.id && (
@@ -347,13 +430,41 @@ export default function BuilderPage() {
                     })}
                 </div>
 
-                {/* Sidebar - Build Summary */}
-                <aside>
+                {/* Sidebar - Build Summary & AI */}
+                <aside className="space-y-6">
+                    {/* AI Buttons */}
+                    {build && (
+                        <div className="space-y-3">
+                            <AIBuildButton
+                                onClick={handleAIBuild}
+                                loading={aiBuildLoading}
+                                className="w-full"
+                            />
+                            <button
+                                onClick={handleOpenAIChat}
+                                className="w-full min-h-11 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <MessageCircle className="w-4 h-4" />
+                                Ask AI Assistant
+                            </button>
+                        </div>
+                    )}
+
                     {build && (
                         <BuildSummaryPanel build={build} onBuildUpdate={handleBuildUpdate} onRemoveComponent={handleRemoveComponent} />
                     )}
                 </aside>
             </div>
+
+            {/* AI Chat Modal */}
+            <AIChatFullscreen
+                open={showAIChat}
+                onOpenChange={setShowAIChat}
+                chatMessages={messages}
+                build={build}
+                onSendMessage={handleSendAIMessage}
+                loading={chatLoading}
+            />
 
         </Layout>
     );

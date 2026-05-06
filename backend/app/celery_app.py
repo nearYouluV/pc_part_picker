@@ -10,7 +10,7 @@ celery_app = Celery(
     "pc_builder",
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
-    include=["app.tasks.scraping_tasks"],
+    include=["app.tasks.scraping_tasks", "app.tasks.ai_tasks"],
 )
 
 celery_app.conf.update(

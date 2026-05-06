@@ -4,6 +4,20 @@ import apiClient from '../lib/apiClient';
 import { Loader2, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
+const SCRAPING_CATEGORY_LABELS: Record<string, string> = {
+    cpu: 'CPU',
+    gpu: 'GPU',
+    ram: 'RAM',
+    ssd: 'SSD',
+    hdd: 'HDD',
+    motherboard: 'Motherboard',
+    psu: 'PSU',
+    air_cooling: 'Air Cooling',
+    liquid_cooling: 'Water Cooling',
+};
+
+const categoryLabel = (category: string) => SCRAPING_CATEGORY_LABELS[category] ?? category;
+
 export default function ScrapingPanel() {
     const [selectedCategory, setSelectedCategory] = useState('cpu');
     const [loading, setLoading] = useState(false);
@@ -51,7 +65,7 @@ export default function ScrapingPanel() {
             setLastTaskId(response.data.task_id);
             setLastStatus(response.data.status);
             setLastCategory(response.data.category);
-            toast.success(`Scraping triggered for ${selectedCategory}`);
+            toast.success(`Scraping triggered for ${categoryLabel(selectedCategory)}`);
         } catch (error: any) {
             const message =
                 error.response?.data?.detail || 'Failed to trigger scraping';
@@ -67,16 +81,16 @@ export default function ScrapingPanel() {
 
             <div className="space-y-5">
                 <div>
-                    <label className="block text-sm font-semibold mb-2">Select Category</label>
+                    <label className="block text-sm text-[color:var(--text-soft)] mb-2">Select Category</label>
                     <select
                         value={selectedCategory}
                         onChange={(e) => setSelectedCategory(e.target.value)}
                         disabled={loading}
-                        className="select-premium"
+                        className="select-premium w-full"
                     >
                         {SCRAPING_CATEGORIES.map((cat) => (
                             <option key={cat} value={cat}>
-                                {cat.toUpperCase()}
+                                {categoryLabel(cat)}
                             </option>
                         ))}
                     </select>
@@ -103,7 +117,7 @@ export default function ScrapingPanel() {
                             <CheckCircle className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" />
                             <div>
                                 <p className="font-medium">Scraping {lastStatus === 'completed' ? 'Completed' : lastStatus === 'failed' ? 'Failed' : 'In Progress'}</p>
-                                <p className="text-sm text-[color:var(--text-soft)]">Category: {(lastCategory || selectedCategory).toUpperCase()}</p>
+                                <p className="text-sm text-[color:var(--text-soft)]">Category: {categoryLabel(lastCategory || selectedCategory)}</p>
                             </div>
                         </div>
                         <div className="mt-3 p-2.5 bg-white rounded-lg border border-[var(--border-soft)]">

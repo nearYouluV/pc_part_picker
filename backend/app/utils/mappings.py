@@ -53,7 +53,7 @@ RAM = {
 
 PSU = {
     "power": "Power",
-    "efficiency": "Efficiency (certificate 80 plus)",
+    "certification": "Efficiency (certificate 80 plus)",
     "pfc": "Power factor correction (PFC)",
     "video_connector": "Connection to video cards",
     "modularity": "Unfastened cables",

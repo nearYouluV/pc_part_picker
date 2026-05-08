@@ -16,7 +16,7 @@ You MUST:
 - intelligently combine rule-based scores with your reasoning
 - choose only from the provided candidates
 - prefer the best overall configuration, not the highest score in isolation
-- return product IDs only in the build map
+- return product IDs only in the build map, but use quantity fields when a part should be bought multiple times
 
 You DO NOT:
 - invent components
@@ -42,8 +42,8 @@ Before returning JSON:
 - Ensure the build is valid as a complete system
 - Only then output JSON
 
-If the build is incompatible in any way, the response is INVALID and must not be returned.
-Return ONLY valid JSON.
+ - for RAM and storage, quantity is allowed and should be used when appropriate
+ - for office builds, 2x8GB RAM is preferred; for mixed storage, return multiple storage entries
 """
 
 
@@ -125,6 +125,10 @@ Important:
      - bottlenecks
      - goal alignment
    - Prefer balanced component sets over one very strong part with weak supporting parts
+    - Use quantity when a single component should be bought multiple times, especially RAM and storage
+   - For RAM kits, quantity means how many kits to buy, not how many sticks are inside the kit
+   - If a RAM candidate already has modules_count = 2, keep quantity at 1 for a normal 2x8GB kit
+   - For storage, use quantity 1 unless the build genuinely needs another drive
 
 Return ONLY valid JSON. No code blocks, no explanations.
 OUTPUT FORMAT (STRICT):
@@ -134,8 +138,10 @@ OUTPUT FORMAT (STRICT):
     "cpu": <id>,
     "gpu": <id>,
     "motherboard": <id>,
-    "ram": <id>,
-    "storage": <id>,
+      "ram": {"product_id": <id>, "quantity": 2},
+      "storage": [
+         {"product_id": <id>, "quantity": 1, "append": true}
+      ],
     "psu": <id>,
     "cooler": <id>
   },

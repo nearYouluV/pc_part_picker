@@ -657,3 +657,28 @@ async def remove_component(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     return serialize_build(build)
+
+
+@router.delete("/{build_id}/component/{category}/{product_id}", response_model=BuildDetailResponse)
+async def remove_component_item(
+    build_id: int,
+    category: str,
+    product_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    try:
+        build = await service.remove_component(
+            build_id=build_id,
+            user_id=current_user.id,
+            category=category,
+            product_id=product_id,
+            quantity=1,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return serialize_build(build)

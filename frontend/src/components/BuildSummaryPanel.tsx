@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 interface BuildSummaryPanelProps {
     build: Build;
     onBuildUpdate: (build: Build) => void;
-    onRemoveComponent: (category: string) => void;
+    onRemoveComponent: (category: string, productId?: number) => void;
 }
 
 export default function BuildSummaryPanel({
@@ -53,14 +53,16 @@ export default function BuildSummaryPanel({
         }
     };
 
-    const handleRemoveComponent = async (category: string) => {
+    const handleRemoveComponent = async (category: string, productId?: number) => {
         try {
             const response = await apiClient.delete(
-                `/builder/${build.id}/component/${category}`
+                productId !== undefined
+                    ? `/builder/${build.id}/component/${category}/${productId}`
+                    : `/builder/${build.id}/component/${category}`
             );
             onBuildUpdate(response.data);
-            onRemoveComponent(category);
-            toast.success(`${category} removed`);
+            onRemoveComponent(category, productId);
+            toast.success(productId !== undefined ? `${category} item removed` : `${category} removed`);
         } catch (error) {
             toast.error(`Failed to remove ${category}`);
         }
@@ -138,8 +140,18 @@ export default function BuildSummaryPanel({
                                         <div className="space-y-1 mt-1">
                                             {(build.storage_components || []).map((storageItem) => (
                                                 <div key={`${storageItem.product_id}-${storageItem.name}`} className="flex items-center justify-between gap-2">
-                                                    <p className="text-xs text-[color:var(--text-soft)] truncate">{storageItem.name}{storageItem.quantity && storageItem.quantity > 1 ? ` x${storageItem.quantity}` : ''}</p>
-                                                    <p className="text-xs font-semibold">₴{(storageItem.price || 0) * (storageItem.quantity || 1)}</p>
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs text-[color:var(--text-soft)] truncate">{storageItem.name}{storageItem.quantity && storageItem.quantity > 1 ? ` x${storageItem.quantity}` : ''}</p>
+                                                        <p className="text-xs font-semibold">₴{(storageItem.price || 0) * (storageItem.quantity || 1)}</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveComponent('storage', storageItem.product_id)}
+                                                        className="h-7 w-7 inline-flex items-center justify-center rounded-lg hover:bg-[var(--surface-muted)] text-[color:var(--text-soft)] hover:text-rose-700 transition-colors"
+                                                        title="Remove one storage item"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
                                                 </div>
                                             ))}
                                         </div>
@@ -155,13 +167,15 @@ export default function BuildSummaryPanel({
                                         </>
                                     )}
                                 </div>
-                                <button
-                                    onClick={() => handleRemoveComponent(category)}
-                                    className="ml-2 h-8 w-8 inline-flex items-center justify-center icon-btn-danger opacity-80 group-hover:opacity-100"
-                                    title={`Remove ${category}`}
-                                >
-                                    <Trash2 className="w-4 h-4" />
-                                </button>
+                                {category !== 'storage' && (
+                                    <button
+                                        onClick={() => handleRemoveComponent(category)}
+                                        className="ml-2 h-8 w-8 inline-flex items-center justify-center icon-btn-danger opacity-80 group-hover:opacity-100"
+                                        title={`Remove ${category}`}
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                )}
                             </div>
                         ))
                     )}

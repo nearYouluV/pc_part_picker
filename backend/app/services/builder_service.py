@@ -208,7 +208,7 @@ class BuilderService:
             raise LookupError("Build not found")
         return refreshed
 
-    async def remove_component(self, build_id: int, user_id: int, category: str) -> PCBuild:
+    async def remove_component(self, build_id: int, user_id: int, category: str, product_id: int | None = None, quantity: int = 1) -> PCBuild:
         normalized_category = category.strip().lower()
         if normalized_category not in ALLOWED_BUILD_CATEGORIES:
             raise ValueError(f"Unsupported category: {category}")
@@ -218,11 +218,27 @@ class BuilderService:
             raise LookupError("Build not found")
 
         category_enum = CATEGORY_TO_ENUM[normalized_category]
-        matching_components = [c for c in build.components if c.category == category_enum]
-        if matching_components:
-            for component in matching_components:
-                await self.db.delete(component)
+        if product_id is not None:
+            matching_component = next(
+                (c for c in build.components if c.category == category_enum and c.product_id == product_id),
+                None,
+            )
+            if not matching_component:
+                raise LookupError("Component not found")
+
+            remove_quantity = max(1, quantity)
+            if (matching_component.quantity or 1) > remove_quantity:
+                matching_component.quantity = (matching_component.quantity or 1) - remove_quantity
+            else:
+                await self.db.delete(matching_component)
+
             await self.db.commit()
+        else:
+            matching_components = [c for c in build.components if c.category == category_enum]
+            if matching_components:
+                for component in matching_components:
+                    await self.db.delete(component)
+                await self.db.commit()
 
         refreshed = await self._get_build(build_id, user_id)
         if not refreshed:

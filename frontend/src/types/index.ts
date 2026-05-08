@@ -57,7 +57,7 @@ export interface AIChatChange {
 }
 
 export interface AIBuildTaskResult {
-    build: Record<string, number>;
+    build: Record<string, number | { product_id: number; quantity?: number; append?: boolean } | Array<{ product_id: number; quantity?: number; append?: boolean }>>;
     summary: string;
     recommendations?: Record<string, AIRecommendedProduct[]>;
     recommendation_constraints?: Record<string, unknown>;

@@ -29,6 +29,7 @@ export default function BuilderPage() {
     const [newBuildBudget, setNewBuildBudget] = useState('');
     const [newBuildGoal, setNewBuildGoal] = useState('balanced');
     const [creating, setCreating] = useState(false);
+    const [componentQuantities, setComponentQuantities] = useState<Record<string, number>>({});
 
     // AI hooks
     const { loading: aiBuildLoading, generateBuild } = useAIBuild();
@@ -114,6 +115,26 @@ export default function BuilderPage() {
         }
     };
 
+    useEffect(() => {
+        if (!build) {
+            setComponentQuantities({});
+            return;
+        }
+
+        const nextQuantities: Record<string, number> = {};
+        for (const [category, component] of Object.entries(build.selected_components)) {
+            if (category === 'storage') {
+                for (const storageItem of build.storage_components || []) {
+                    nextQuantities[`storage:${storageItem.product_id}`] = Math.max(1, storageItem.quantity || 1);
+                }
+            } else {
+                nextQuantities[category] = Math.max(1, component.quantity || 1);
+            }
+        }
+
+        setComponentQuantities(nextQuantities);
+    }, [build]);
+
     const handleCreateNewBuild = () => {
         setShowCreateForm(true);
     };
@@ -166,6 +187,51 @@ export default function BuilderPage() {
         }
     };
 
+    const handleApplyQuantity = async (category: string, productId?: number) => {
+        if (!build) return;
+
+        const selectedComp = build.selected_components[category];
+        const quantity = category === 'storage'
+            ? getStorageQuantity(productId) ?? 1
+            : getCategoryQuantity(category, selectedComp || null);
+
+        const targetProductId = category === 'storage' ? productId : selectedComp?.product_id;
+
+        if (!targetProductId) {
+            toast.error('Select a component first');
+            return;
+        }
+
+        try {
+            const response = await apiClient.post(`/builder/${build.id}/add`, {
+                category,
+                product_id: targetProductId,
+                quantity,
+                append: category === 'storage',
+            });
+            setBuild(response.data);
+            toast.success(`${categoryLabel(category)} quantity updated`);
+        } catch (error: any) {
+            const message = error.response?.data?.detail || 'Failed to update quantity';
+            toast.error(message);
+        }
+    };
+
+    const getStorageQuantity = (productId?: number | null) => {
+        if (productId === null || productId === undefined) {
+            return 1;
+        }
+
+        return componentQuantities[`storage:${productId}`] ?? build?.storage_components?.find((item) => item.product_id === productId)?.quantity ?? 1;
+    };
+
+    const setStorageQuantity = (productId: number, quantity: number) => {
+        setComponentQuantities((current) => ({
+            ...current,
+            [`storage:${productId}`]: Math.max(1, Math.min(8, quantity)),
+        }));
+    };
+
     const handleOpenBuild = (build: Build) => {
         navigate(`/builder?buildId=${build.id}`);
     };
@@ -190,6 +256,17 @@ export default function BuilderPage() {
 
     const handleRemoveComponent = () => {
         // This will be called by BuildSummaryPanel
+    };
+
+    const getCategoryQuantity = (category: string, selectedComp?: Product | null) => {
+        return componentQuantities[category] ?? selectedComp?.quantity ?? 1;
+    };
+
+    const setCategoryQuantity = (category: string, quantity: number) => {
+        setComponentQuantities((current) => ({
+            ...current,
+            [category]: Math.max(1, Math.min(8, quantity)),
+        }));
     };
 
     const handleBuildUpdate = (updatedBuild: Build) => {
@@ -387,17 +464,62 @@ export default function BuilderPage() {
                                         {category === 'storage' ? (
                                             <div className="space-y-1">
                                                 {storageItems.map((item) => (
-                                                    <div key={`${item.product_id}-${item.name}`} className="flex items-center justify-between gap-2">
-                                                        <p className="text-sm font-medium truncate">{item.name}{item.quantity && item.quantity > 1 ? ` x${item.quantity}` : ''}</p>
-                                                        <p className="text-xs text-[color:var(--text-soft)]">₴{(item.price || 0) * (item.quantity || 1)}</p>
+                                                    <div
+                                                        key={`${item.product_id}-${item.name}`}
+                                                        className="w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1"
+                                                    >
+                                                        <div className="min-w-0">
+                                                            <p className="text-sm font-medium truncate">{item.name}</p>
+                                                            <p className="text-xs text-[color:var(--text-soft)]">₴{(item.price || 0) * (item.quantity || 1)}</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="number"
+                                                                min={1}
+                                                                max={8}
+                                                                value={getStorageQuantity(item.product_id)}
+                                                                onChange={(e) => setStorageQuantity(item.product_id, Number.parseInt(e.target.value || '1', 10) || 1)}
+                                                                className="input-premium w-20 text-right"
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleApplyQuantity('storage', item.product_id)}
+                                                                className="h-10 px-3 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                                                            >
+                                                                Apply
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
                                         ) : (
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-sm font-medium truncate">{selectedComp?.name}{selectedComp?.quantity && selectedComp.quantity > 1 ? ` x${selectedComp.quantity}` : ''}</p>
-                                                {selectedComp?.source === 'ai' && (
-                                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AI</span>
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="min-w-0 flex items-center gap-2">
+                                                    <p className="text-sm font-medium truncate">{selectedComp?.name}</p>
+                                                    {selectedComp?.source === 'ai' && (
+                                                        <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AI</span>
+                                                    )}
+                                                </div>
+                                                {category === 'ram' ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="number"
+                                                            min={1}
+                                                            max={8}
+                                                            value={getCategoryQuantity(category, selectedComp || null)}
+                                                            onChange={(e) => setCategoryQuantity(category, Number.parseInt(e.target.value || '1', 10) || 1)}
+                                                            className="input-premium w-20 text-right"
+                                                        />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleApplyQuantity(category)}
+                                                            className="h-10 px-3 rounded-lg bg-[var(--primary)] text-white text-sm font-semibold hover:opacity-90 transition-opacity"
+                                                        >
+                                                            Apply
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-sm font-semibold">₴{(selectedComp?.price || 0) * (selectedComp?.quantity || 1)}</p>
                                                 )}
                                             </div>
                                         )}

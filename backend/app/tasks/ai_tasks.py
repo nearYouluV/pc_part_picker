@@ -362,6 +362,74 @@ def _rank_category_candidates(
     return [_normalize_recommendation_item(item) for item in ranked]
 
 
+def _cpu_vendor_bucket(cpu_candidate: dict[str, Any]) -> str:
+    specs = cpu_candidate.get("specs") or {}
+    manufacturer = str(specs.get("manufacturer") or "").strip().lower()
+    name = str(cpu_candidate.get("name") or "").strip().lower()
+
+    if "amd" in manufacturer or "ryzen" in name:
+        return "amd"
+    if "intel" in manufacturer or any(token in name for token in ["core", "pentium", "celeron", "xeon"]):
+        return "intel"
+    return "other"
+
+
+def _rank_balanced_cpu_candidates(
+    products: list[dict[str, Any]],
+    budget: int,
+    goal: str,
+    build_context: dict[str, dict[str, Any]],
+    per_vendor: int = 3,
+) -> list[dict[str, Any]]:
+    if not products:
+        return []
+
+    amd_candidates = [item for item in products if _cpu_vendor_bucket(item) == "amd"]
+    intel_candidates = [item for item in products if _cpu_vendor_bucket(item) == "intel"]
+
+    ranked_amd = _rank_category_candidates(
+        amd_candidates,
+        "cpu",
+        budget,
+        goal,
+        build_context,
+        top_n=per_vendor,
+    )
+    ranked_intel = _rank_category_candidates(
+        intel_candidates,
+        "cpu",
+        budget,
+        goal,
+        build_context,
+        top_n=per_vendor,
+    )
+
+    cpu_recommendations = [*ranked_amd[:per_vendor], *ranked_intel[:per_vendor]]
+    target_total = per_vendor * 2
+
+    if len(cpu_recommendations) < target_total:
+        # Fallback for sparse catalogs: still provide 6 CPUs by backfilling from remaining ranked options.
+        all_ranked = _rank_category_candidates(
+            products,
+            "cpu",
+            budget,
+            goal,
+            build_context,
+            top_n=max(20, target_total),
+        )
+        seen_ids = {item.get("id") for item in cpu_recommendations}
+        for item in all_ranked:
+            item_id = item.get("id")
+            if item_id in seen_ids:
+                continue
+            cpu_recommendations.append(item)
+            seen_ids.add(item_id)
+            if len(cpu_recommendations) >= target_total:
+                break
+
+    return cpu_recommendations[:target_total]
+
+
 async def _build_candidate_map_for_context(
     db,
     build_context: dict[str, dict[str, Any]],
@@ -371,9 +439,8 @@ async def _build_candidate_map_for_context(
     all_products = await _load_all_products(db)
     grouped_products = _group_candidate_payloads(all_products)
 
-    cpu_recommendations = _rank_category_candidates(
+    cpu_recommendations = _rank_balanced_cpu_candidates(
         grouped_products.get("cpu", []),
-        "cpu",
         budget,
         goal,
         build_context,
@@ -581,17 +648,80 @@ def generate_ai_build_task(
 
             # Apply components to the build
             service = BuilderService(db)
-            for category, product_id in build_components.items():
-                if product_id and isinstance(product_id, int):
-                    try:
-                        await service.add_or_replace_component(
-                            build_id, user_id, category, product_id, source="ai"
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to add {category}: {e}")
+            normalized_build: dict[str, Any] = {}
+
+            for category, selection in build_components.items():
+                try:
+                    normalized_category = str(category).strip().lower()
+
+                    if normalized_category == "storage" and isinstance(selection, list):
+                        normalized_storage: list[dict[str, Any]] = []
+                        for item in selection:
+                            if isinstance(item, int):
+                                item = {"product_id": item, "quantity": 1, "append": True}
+                            if not isinstance(item, dict):
+                                continue
+
+                            product_id = item.get("product_id") or item.get("id")
+                            if not isinstance(product_id, int):
+                                continue
+
+                            quantity = item.get("quantity")
+                            normalized_quantity = quantity if isinstance(quantity, int) and quantity >= 1 else 1
+                            append = bool(item.get("append", True))
+
+                            await service.add_or_replace_component(
+                                build_id,
+                                user_id,
+                                normalized_category,
+                                product_id,
+                                quantity=normalized_quantity,
+                                source="ai",
+                                append=append,
+                            )
+                            normalized_storage.append(
+                                {
+                                    "product_id": product_id,
+                                    "quantity": normalized_quantity,
+                                    "append": append,
+                                }
+                            )
+
+                        normalized_build[normalized_category] = normalized_storage
+                        continue
+
+                    if isinstance(selection, dict):
+                        product_id = selection.get("product_id") or selection.get("id")
+                        quantity = selection.get("quantity")
+                    else:
+                        product_id = selection
+                        quantity = None
+
+                    if not isinstance(product_id, int):
+                        continue
+
+                    normalized_quantity = quantity if isinstance(quantity, int) and quantity >= 1 else 1
+                    append = bool(selection.get("append")) if isinstance(selection, dict) else False
+
+                    await service.add_or_replace_component(
+                        build_id,
+                        user_id,
+                        normalized_category,
+                        product_id,
+                        quantity=normalized_quantity,
+                        source="ai",
+                        append=append if normalized_category == "storage" else False,
+                    )
+                    normalized_build[normalized_category] = {
+                        "product_id": product_id,
+                        "quantity": normalized_quantity,
+                        **({"append": append} if normalized_category == "storage" else {}),
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to add {category}: {e}")
 
             return {
-                "build": build_components,
+                "build": normalized_build,
                 "summary": summary,
                 "recommendations": candidate_map,
                 "recommendation_constraints": recommendation_constraints,
@@ -736,7 +866,14 @@ def process_ai_chat_message_task(
                         (component for component in build.components if component.category.value == str(category).strip().lower()),
                         None,
                     )
-                    previous_name = previous_component.product.name if previous_component and previous_component.product else None
+                    previous_snapshot = None
+                    if previous_component and previous_component.product:
+                        previous_snapshot = {
+                            "product_id": previous_component.product_id,
+                            "name": previous_component.product.name,
+                            "price": previous_component.product.price,
+                            "image_small": previous_component.product.image_small,
+                        }
 
                     try:
                         updated_build = await service.add_or_replace_component(
@@ -759,15 +896,10 @@ def process_ai_chat_message_task(
                                 "product_id": product_id,
                                 "quantity": normalized_quantity,
                                 "append": append_storage if str(category).strip().lower() == "storage" else False,
-                                "from_name": previous_name,
+                                "from_name": previous_snapshot["name"] if previous_snapshot else None,
                                 "to_name": new_component.product.name if new_component and new_component.product else None,
                                 "reason": change.get("reason"),
-                                "from_component": {
-                                    "product_id": previous_component.product_id if previous_component else None,
-                                    "name": previous_component.product.name if previous_component and previous_component.product else None,
-                                    "price": previous_component.product.price if previous_component and previous_component.product else None,
-                                    "image_small": previous_component.product.image_small if previous_component and previous_component.product else None,
-                                },
+                                "from_component": previous_snapshot,
                                 "to_component": {
                                     "product_id": new_component.product_id if new_component else None,
                                     "name": new_component.product.name if new_component and new_component.product else None,

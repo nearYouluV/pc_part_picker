@@ -1,19 +1,26 @@
 import { Markdown } from '../Markdown';
+import type { AIChatChange } from '../../types';
 
 interface AIMessageProps {
     role: 'user' | 'assistant';
     content: string;
     isLoading?: boolean;
+    changes?: AIChatChange[];
 }
 
-export function AIMessage({ role, content, isLoading }: AIMessageProps) {
+function formatPrice(value?: number | null) {
+    if (typeof value !== 'number') return null;
+    return `UAH ${value.toLocaleString()}`;
+}
+
+export function AIMessage({ role, content, isLoading, changes = [] }: AIMessageProps) {
     const isUser = role === 'user';
 
     return (
         <div className={`flex w-full gap-3 mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
             {/* Avatar */}
             {!isUser && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-medium">
+                <div className="chat-message-avatar flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium">
                     AI
                 </div>
             )}
@@ -21,8 +28,8 @@ export function AIMessage({ role, content, isLoading }: AIMessageProps) {
             {/* Message bubble */}
             <div
                 className={`max-w-xs lg:max-w-md xl:max-w-lg px-4 py-3 rounded-lg ${isUser
-                        ? 'bg-blue-600 text-white rounded-br-none'
-                        : 'bg-slate-100 text-slate-900 rounded-bl-none'
+                    ? 'chat-message-user rounded-br-none'
+                    : 'chat-message-assistant rounded-bl-none'
                     }`}
             >
                 {isLoading ? (
@@ -34,7 +41,52 @@ export function AIMessage({ role, content, isLoading }: AIMessageProps) {
                 ) : isUser ? (
                     <p className="text-sm">{content}</p>
                 ) : (
-                    <Markdown content={content} />
+                    <>
+                        <Markdown content={content} />
+                        {changes.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                                {changes.map((change, idx) => {
+                                    const fromCard = change.from_component;
+                                    const toCard = change.to_component;
+                                    return (
+                                        <div key={`${change.category}-${change.product_id}-${idx}`} className="chat-change-block">
+                                            <p className="chat-change-title">{change.category} updated</p>
+                                            <div className="chat-change-grid">
+                                                <div className="chat-change-card">
+                                                    {fromCard?.image_small ? (
+                                                        <img src={fromCard.image_small} alt={fromCard.name || 'Previous component'} className="chat-change-thumb" />
+                                                    ) : (
+                                                        <div className="chat-change-thumb chat-change-thumb-fallback">Old</div>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <p className="chat-change-label">Replaced</p>
+                                                        <p className="chat-change-name" title={fromCard?.name || change.from_name || 'Previous component'}>
+                                                            {fromCard?.name || change.from_name || 'Previous component'}
+                                                        </p>
+                                                        <p className="chat-change-price">{formatPrice(fromCard?.price) || 'Price unavailable'}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="chat-change-card">
+                                                    {toCard?.image_small ? (
+                                                        <img src={toCard.image_small} alt={toCard.name || 'New component'} className="chat-change-thumb" />
+                                                    ) : (
+                                                        <div className="chat-change-thumb chat-change-thumb-fallback">New</div>
+                                                    )}
+                                                    <div className="min-w-0">
+                                                        <p className="chat-change-label">Now using</p>
+                                                        <p className="chat-change-name" title={toCard?.name || change.to_name || 'New component'}>
+                                                            {toCard?.name || change.to_name || 'New component'}
+                                                        </p>
+                                                        <p className="chat-change-price">{formatPrice(toCard?.price) || 'Price unavailable'}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>

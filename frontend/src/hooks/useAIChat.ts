@@ -2,10 +2,21 @@ import { useState, useCallback } from 'react';
 import { aiChatAPI } from '../lib/apiClient';
 import { toast } from 'sonner';
 import { aiTaskAPI } from '../lib/apiClient';
+import type { AIChatChange } from '../types';
 
 interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
+    changes?: AIChatChange[];
+}
+
+interface AIChatResult {
+    answer: string;
+    explanation?: string | null;
+    score?: number | null;
+    confidence?: number | null;
+    changes?: AIChatChange[];
+    status?: string;
 }
 
 interface UseAIChatReturn {
@@ -14,7 +25,8 @@ interface UseAIChatReturn {
     loading: boolean;
     error: string | null;
     createChat: (buildId: number) => Promise<string | null>;
-    sendMessage: (message: string) => Promise<void>;
+    loadHistory: (chatId: string) => Promise<void>;
+    sendMessage: (message: string) => Promise<AIChatResult | null>;
     clearChat: () => void;
 }
 
@@ -71,11 +83,34 @@ export function useAIChat(): UseAIChatReturn {
         }
     }, []);
 
+    const loadHistory = useCallback(async (chatId: string) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const history = await aiChatAPI.getHistory(chatId);
+            if (Array.isArray(history)) {
+                setMessages(
+                    history.map((message: { role: 'user' | 'assistant'; content: string }) => ({
+                        role: message.role,
+                        content: message.content,
+                    }))
+                );
+            }
+        } catch (err: any) {
+            const errorMessage = err?.response?.data?.detail || 'Failed to load chat history';
+            setError(errorMessage);
+            toast.error(errorMessage);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
     const sendMessage = useCallback(
         async (message: string) => {
             if (!chatId) {
                 toast.error('Chat not initialized');
-                return;
+                return null;
             }
 
             setLoading(true);
@@ -90,13 +125,15 @@ export function useAIChat(): UseAIChatReturn {
                 const response = await pollTaskStatus(taskResponse.task_id);
 
                 // Add assistant message with response
-                setMessages(prev => [...prev, { role: 'assistant', content: response.answer }]);
+                setMessages(prev => [...prev, { role: 'assistant', content: response.answer, changes: response.changes || [] }]);
+                return response as AIChatResult;
             } catch (err: any) {
                 const errorMessage = err?.response?.data?.detail || 'Failed to send message';
                 setError(errorMessage);
                 toast.error(errorMessage);
                 // Remove the user message that was added
                 setMessages(prev => prev.slice(0, -1));
+                return null;
             } finally {
                 setLoading(false);
             }
@@ -116,6 +153,7 @@ export function useAIChat(): UseAIChatReturn {
         loading,
         error,
         createChat,
+        loadHistory,
         sendMessage,
         clearChat,
     };

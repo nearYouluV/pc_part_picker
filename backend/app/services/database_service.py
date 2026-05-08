@@ -275,14 +275,13 @@ class ChatService:
             chat_id: str,
             message: str,
             role: str = "user",
-            active_indices: list = None) -> ChatMessage:
+            ) -> ChatMessage:
         """Create a new chat message"""
         msg = ChatMessage(
             id=uuid4(),
             chat_id=chat_id,
             role=role,
             content=message,
-            selected_indices=active_indices or [],
             created_at=datetime.now(timezone.utc)
         )
         db.add(msg)
@@ -304,4 +303,4 @@ class ChatService:
         )
 
         messages = result.scalars().all()
-        return [{"role": m.role, "content": m.content, "selected_indices": m.selected_indices or []} for m in messages]
+        return [{"role": m.role, "content": m.content} for m in messages]

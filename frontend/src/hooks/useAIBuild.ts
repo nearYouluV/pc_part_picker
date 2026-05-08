@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { aiBuildAPI } from '../lib/apiClient';
 import { toast } from 'sonner';
-import type { Product } from '../types';
+import type { AIBuildTaskResult, Product } from '../types';
 import { aiTaskAPI } from '../lib/apiClient';
 
 interface UseAIBuildReturn {
@@ -13,7 +13,7 @@ interface UseAIBuildReturn {
         goal: string,
         candidates: Record<string, Product[]>,
         selectedComponents?: Record<string, number>
-    ) => Promise<{ build: Record<string, number>; summary: string } | null>;
+    ) => Promise<AIBuildTaskResult | null>;
 }
 
 export function useAIBuild(): UseAIBuildReturn {

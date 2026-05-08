@@ -6,9 +6,7 @@ import BuildCard from '../components/BuildCard.tsx';
 import BuildSummaryPanel from '../components/BuildSummaryPanel';
 import CreateBuildModal from '../components/CreateBuildModal';
 import { AIBuildButton } from '../components/ai/AIBuildButton';
-import { AIChatFullscreen } from '../components/ai/AIChatFullscreen';
 import { useAIBuild } from '../hooks/useAIBuild';
-import { useAIChat } from '../hooks/useAIChat';
 import type { Build, Product } from '../types';
 import { BUILD_GOALS, COMPONENT_CATEGORIES } from '../types';
 import apiClient from '../lib/apiClient';
@@ -34,15 +32,6 @@ export default function BuilderPage() {
 
     // AI hooks
     const { loading: aiBuildLoading, generateBuild } = useAIBuild();
-    const {
-        chatId,
-        messages,
-        loading: chatLoading,
-        createChat,
-        sendMessage,
-        clearChat,
-    } = useAIChat();
-    const [showAIChat, setShowAIChat] = useState(false);
 
     const user = getUser();
 
@@ -85,31 +74,6 @@ export default function BuilderPage() {
             toast.error('Failed to generate AI build');
         }
     };
-
-    // AI Chat handlers
-    const handleOpenAIChat = async () => {
-        if (!build) return;
-
-        if (!chatId) {
-            const newChatId = await createChat(build.id);
-            if (newChatId) {
-                setShowAIChat(true);
-            }
-        } else {
-            setShowAIChat(true);
-        }
-    };
-
-    const handleSendAIMessage = async (message: string) => {
-        await sendMessage(message);
-    };
-
-    useEffect(() => {
-        // Reset chat when build changes
-        if (build?.id) {
-            clearChat();
-        }
-    }, [build?.id]);
 
     useEffect(() => {
         if (buildId) {
@@ -180,16 +144,18 @@ export default function BuilderPage() {
         }
     };
 
-    const handleSelectComponent = async (product: Product) => {
+    const handleSelectComponent = async (product: Product, quantity: number, append: boolean) => {
         if (!build) return;
 
         try {
             const response = await apiClient.post(`/builder/${build.id}/add`, {
                 category: selectedCategory,
                 product_id: product.product_id,
+                quantity,
+                append,
             });
             setBuild(response.data);
-            toast.success(`${categoryLabel(selectedCategory || '')} added successfully!`);
+            toast.success(`${categoryLabel(selectedCategory || '')} updated successfully!`);
             // Keep selector open briefly to show confirmation
             setTimeout(() => {
                 setSelectedCategory(null);
@@ -202,6 +168,12 @@ export default function BuilderPage() {
 
     const handleOpenBuild = (build: Build) => {
         navigate(`/builder?buildId=${build.id}`);
+    };
+
+    const handleOpenAIChat = () => {
+        if (!build) return;
+
+        navigate(`/ai-chat?buildId=${build.id}`);
     };
 
     const handleDeleteBuild = async (buildId: number) => {
@@ -379,6 +351,7 @@ export default function BuilderPage() {
                 <div className="lg:col-span-2 space-y-4">
                     {COMPONENT_CATEGORIES.map((category) => {
                         const selectedComp = build?.selected_components[category];
+                        const storageItems = category === 'storage' ? (build?.storage_components || []) : [];
                         const isMissing = !selectedComp;
                         const isExpanded = selectedCategory === category;
                         const label = categoryLabel(category);
@@ -388,17 +361,46 @@ export default function BuilderPage() {
                                 <div className="flex items-start justify-between mb-4 gap-4">
                                     <div className="flex-1 min-w-0">
                                         <h3 className="text-lg font-semibold truncate">{label}</h3>
-                                        <p className="text-sm text-[color:var(--text-soft)] mt-2 truncate">{selectedComp ? selectedComp.name : 'No component selected'}</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-sm text-[color:var(--text-soft)] mt-2 truncate">
+                                                {category === 'storage' && storageItems.length > 0
+                                                    ? `${storageItems.length} drive${storageItems.length > 1 ? 's' : ''} selected`
+                                                    : (selectedComp ? selectedComp.name : 'No component selected')}
+                                            </p>
+                                            {selectedComp?.source === 'ai' && (
+                                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AI</span>
+                                            )}
+                                        </div>
                                     </div>
-                                    {selectedComp && (
-                                        <p className="text-lg font-bold text-[color:var(--text-main)]">${selectedComp.price}</p>
+                                    {(selectedComp || (category === 'storage' && storageItems.length > 0)) && (
+                                        <p className="text-lg font-bold text-[color:var(--text-main)]">
+                                            ₴{category === 'storage'
+                                                ? storageItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0)
+                                                : (selectedComp?.price || 0) * (selectedComp?.quantity || 1)}
+                                        </p>
                                     )}
                                 </div>
 
-                                {selectedComp && (
+                                {(selectedComp || (category === 'storage' && storageItems.length > 0)) && (
                                     <div className="mb-4 p-3 muted-panel rounded-md">
                                         <p className="text-xs text-[color:var(--text-soft)] mb-1">Selected</p>
-                                        <p className="text-sm font-medium truncate">{selectedComp.name}</p>
+                                        {category === 'storage' ? (
+                                            <div className="space-y-1">
+                                                {storageItems.map((item) => (
+                                                    <div key={`${item.product_id}-${item.name}`} className="flex items-center justify-between gap-2">
+                                                        <p className="text-sm font-medium truncate">{item.name}{item.quantity && item.quantity > 1 ? ` x${item.quantity}` : ''}</p>
+                                                        <p className="text-xs text-[color:var(--text-soft)]">₴{(item.price || 0) * (item.quantity || 1)}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-sm font-medium truncate">{selectedComp?.name}{selectedComp?.quantity && selectedComp.quantity > 1 ? ` x${selectedComp.quantity}` : ''}</p>
+                                                {selectedComp?.source === 'ai' && (
+                                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AI</span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -422,6 +424,7 @@ export default function BuilderPage() {
                                             onClose={() => setSelectedCategory(null)}
                                             buildGoal={build.goal}
                                             buildBudget={build.budget}
+                                            hasExistingStorage={(build.storage_components || []).length > 0}
                                         />
                                     </div>
                                 )}
@@ -455,16 +458,6 @@ export default function BuilderPage() {
                     )}
                 </aside>
             </div>
-
-            {/* AI Chat Modal */}
-            <AIChatFullscreen
-                open={showAIChat}
-                onOpenChange={setShowAIChat}
-                chatMessages={messages}
-                build={build}
-                onSendMessage={handleSendAIMessage}
-                loading={chatLoading}
-            />
 
         </Layout>
     );

@@ -12,12 +12,12 @@ load_dotenv()
 class AIParser:
     def __init__(self, source: str, temperature: int = 0):
         self.source = source
-        self.model = 'gemini-3-flash-preview'
-        self.max_tokens = 130_000
+        self.model = 'llama-3.3-70b-versatile'
+        self.max_tokens = 32768
         self.client = OpenAI(
             api_key=os.getenv("VENICE_API_KEY"),
             # base_url="https://api.venice.ai/api/v1"
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            base_url="https://api.groq.com/openai/v1",
         )
         self.instructions = instruction_dict.get(source, "No instructions found for this source")
         self.prompt = system_prompt_dict.get(source, "No system prompt found for this source")
@@ -38,12 +38,13 @@ class AIParser:
             model=self.model,
             max_tokens=self.max_tokens,
             messages=messages,
+            response_format={"type": "json_object"},
             temperature=self.temperature
         )
         print("AI response:", response.choices[0].message.content)
         return self.parse_response(response.choices[0].message.content)
 
-    def parse_response(self, response_content: str):
+    def parse_response(self, response_content: str) -> dict:
         try:
             parsed_data = json.loads(response_content)
             return parsed_data

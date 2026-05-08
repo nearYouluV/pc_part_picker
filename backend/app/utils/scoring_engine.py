@@ -156,7 +156,6 @@ def _normalize_mhz_value(value: Any) -> float:
     if numeric <= 0:
         return 0.0
 
-    # Normalize obvious Hz/kHz inputs to MHz while preserving already-MHz values.
     if numeric >= 1_000_000_000:
         return numeric / 1_000_000.0
     if numeric >= 1_000_000:
@@ -233,6 +232,7 @@ def score_component(component, category, budget, goal, distribution):
     specs = _component_specs(component)
     name = str(_component_field(component, "name", "") or "").lower()
     subcategory = str(_component_field(component, "subcategory", "") or "").lower()
+    normalized_goal = normalize_goal(str(goal or "balanced"))
 
     score = 0
 
@@ -243,17 +243,13 @@ def score_component(component, category, budget, goal, distribution):
     if budget and budget > 0:
         price_pct = price / budget
 
-        # HARD FILTER: Products way over budget get massive penalty
         if price_pct > 1.5:
-            # Over 150% of budget = auto-reject to bottom
             score -= 1000
         elif price_pct > max_pct:
-            # Over category limit but not catastrophic = heavy penalty
             score -= 300
         elif price_pct < min_pct:
             score -= 15
         else:
-            # Within budget range = bonus
             score += 40
     else:
         score += 10
@@ -277,7 +273,6 @@ def score_component(component, category, budget, goal, distribution):
         manufacturer = str(specs.get("manufacturer", "")).lower()
 
         if goal == "esports":
-            # Esports: prioritize L3 cache, boost clock, and sensible core counts.
             if manufacturer == "amd" or "amd" in name:
                 score += 8
 
@@ -329,7 +324,7 @@ def score_component(component, category, budget, goal, distribution):
     if category == "gpu":
         if perf:
             if goal == "aaa":
-                score += perf * 0.8   # GPU = king
+                score += perf * 0.8
             elif goal == "balanced":
                 score += perf * 0.6
             else:
@@ -393,23 +388,31 @@ def score_component(component, category, budget, goal, distribution):
         if "sodimm" in ram_label or "so-dimm" in ram_label or "so dimm" in ram_label:
             score -= 100
 
-        # Prefer 32GB total kit capacity as the default sweet spot across all budgets/goals.
         if total_capacity == 32:
             score += 70
         elif total_capacity > 32:
-            # Keep higher-capacity kits compatible, but below 32GB recommendations.
             score += 20
         elif total_capacity >= 16:
             score += 35
         else:
             score -= 25
 
+        # Office profile: prioritize exactly 2x8GB (16GB total) for value and responsiveness.
+        if normalized_goal == "office":
+            if total_capacity == 16 and modules_count == 2 and capacity_per_module == 8:
+                score += 65
+            elif total_capacity == 16 and modules_count == 2:
+                score += 35
+            elif total_capacity == 16:
+                score += 15
+            elif total_capacity > 16:
+                score -= 55
+            else:
+                score -= 20
+
         if freq:
-            # Keep speed as a small, generation-agnostic tie-breaker so DDR2, DDR3,
-            # DDR4, DDR5, and future DDR6 all score consistently without hardcoded limits.
             score += min(freq / 2000, 4)
 
-        # Prefer lower real latency when CAS and frequency are both available.
         if cas_latency and freq:
             latency_ns = (cas_latency * 2000) / freq
             if latency_ns <= 10:
@@ -423,11 +426,9 @@ def score_component(component, category, budget, goal, distribution):
             else:
                 score -= 2
 
-        # Mild tie-breaker by memory bandwidth.
         if bandwidth:
             score += min(bandwidth / 12000, 3)
 
-        # Slightly favor lower-voltage kits for efficiency/thermals.
         try:
             voltage = float(voltage_raw) if voltage_raw is not None else 0.0
         except (TypeError, ValueError):
@@ -466,6 +467,36 @@ def score_component(component, category, budget, goal, distribution):
         read = specs.get("read_speed", 0)
         if read:
             score += read / 2000
+
+
+        try:
+            raw_capacity = specs.get("capacity")
+        except Exception:
+            raw_capacity = None
+
+        if raw_capacity is None:
+            raw_capacity = specs.get("capacity") if isinstance(specs, dict) else None
+
+        capacity_val = _int_or_default(raw_capacity, 0)
+
+        mem_suffix = (specs.get("memory_suffix") or "") if isinstance(specs, dict) else ""
+        if not mem_suffix:
+            if isinstance(specs, dict):
+                mem_suffix = specs.get("memory_suffix") or ""
+
+        suffix = str(mem_suffix or "").strip().lower()
+        multiplier = 1
+        if suffix.startswith("t"):
+            multiplier = 1024
+        elif suffix.startswith("m"):
+            multiplier = 1 / 1024
+        else:
+            multiplier = 1
+
+        capacity_gb = int(capacity_val * multiplier) if capacity_val else 0
+
+        if capacity_gb >= 1024:
+            score += 80
 
     return score
 
@@ -983,16 +1014,14 @@ def rank_category_products(
         used_keywords = ("used", "ref", "восстановлено", "Б/у", "б/у", "ремонт", "ремонтирован", "ремонтная", "ремонтный", "следы")
         is_used = any(k in name_lower or k in sub_lower or k in brand_lower or k in cond_lower for k in used_keywords)
         if is_used:
-            score -= 80
+            score -= 100
             compatibility_details.insert(0, "Detected used/refurbished item — deprioritized in recommendations")
 
-        # budget flags used for deterministic sorting
         category_limit = int((budget or 0) * distribution.get(category, (0, 1))[1]) if budget and budget > 0 else None
         in_budget = True
         if category_limit is not None:
             in_budget = price <= category_limit
 
-        # RAM-specific boosts: prefer 2-module kits for dual-channel setups
         specs = product.get("specs") or {}
         if category == "ram":
             modules = specs.get("modules_count")
@@ -1005,9 +1034,9 @@ def rank_category_products(
             modules_count = max(_int_or_default(specs.get("modules_count"), 1), 1)
             total_capacity = capacity_per_module * modules_count
 
-            if goal == "office" and total_capacity > 16:
+            if goal == "office" and not (total_capacity == 16 and modules_count == 2 and capacity_per_module == 8):
                 compatibility_details.append(
-                    "Office build note: 16GB is usually enough; higher capacities are supported but ranked lower by default"
+                    "Office build note: preferred RAM target is 2x8GB (16GB total); other capacities/configurations are supported but ranked lower by default"
                 )
             elif goal != "office" and total_capacity > 32:
                 compatibility_details.append(

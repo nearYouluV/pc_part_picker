@@ -33,7 +33,7 @@ class PCBuild(TimestampMixin, Base):
 class BuildComponent(TimestampMixin, Base):
     __tablename__ = "build_components"
     __table_args__ = (
-        UniqueConstraint("build_id", "category", name="uq_build_component_category"),
+        UniqueConstraint("build_id", "category", "product_id", name="uq_build_component_category_product"),
     )
 
     id = Column(Integer, primary_key=True)
@@ -41,6 +41,7 @@ class BuildComponent(TimestampMixin, Base):
     category = Column(Enum(CategoryEnum), nullable=False)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False)
     quantity = Column(Integer, nullable=False, default=1)
+    source = Column(String, nullable=False, default="user")
 
     build = relationship("PCBuild", back_populates="components")
     product = relationship("Product")

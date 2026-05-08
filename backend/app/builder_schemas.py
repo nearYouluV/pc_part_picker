@@ -23,6 +23,7 @@ class AddComponentRequest(BaseModel):
     category: str
     product_id: int
     quantity: int | None = Field(default=None, ge=1)
+    append: bool = False
 
 
 class BuildComponentView(BaseModel):
@@ -32,6 +33,7 @@ class BuildComponentView(BaseModel):
     price: int
     category: str
     quantity: int = 1
+    source: str = "user"
 
 
 class BuildDetailResponse(BaseModel):
@@ -41,6 +43,7 @@ class BuildDetailResponse(BaseModel):
     budget: int | None
     goal: str
     selected_components: dict[str, BuildComponentView]
+    storage_components: list[BuildComponentView] = Field(default_factory=list)
     total_price: int
     compatibility_warnings: list[str]
     created_at: datetime

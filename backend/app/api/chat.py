@@ -73,7 +73,6 @@ async def create_ai_chat(
         "user_id": chat.user_id,
         "result_id": chat.result_id,
         "created_at": chat.created_at.isoformat(),
-        "active_indices": chat.active_indices or []
     }
 
 

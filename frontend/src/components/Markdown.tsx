@@ -7,7 +7,7 @@ interface MarkdownProps {
 
 export function Markdown({ content }: MarkdownProps) {
     return (
-        <div className="markdown-content text-sm prose prose-sm max-w-none">
+        <div className="markdown-content chat-window-markdown text-sm prose prose-sm max-w-none">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
         </div>
     );

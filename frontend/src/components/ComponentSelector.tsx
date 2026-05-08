@@ -8,11 +8,12 @@ import FilterPanel from './FilterPanel.tsx';
 interface ComponentSelectorProps {
     buildId: number;
     category: string;
-    onSelect: (product: Product) => void;
+    onSelect: (product: Product, quantity: number, append: boolean) => void;
     selectedProduct?: Product | null;
     onClose: () => void;
     buildGoal: string;
     buildBudget: number | null;
+    hasExistingStorage?: boolean;
 }
 
 type FilterState = Record<string, string | boolean | number | null | undefined>;
@@ -25,6 +26,7 @@ export default function ComponentSelector({
     onClose,
     buildGoal,
     buildBudget,
+    hasExistingStorage = false,
 }: ComponentSelectorProps) {
     const categoryLabel = category === 'cooler' ? 'Cooling' : category;
     const [products, setProducts] = useState<ComponentRecommendation[]>([]);
@@ -33,11 +35,24 @@ export default function ComponentSelector({
     const [sortBy, setSortBy] = useState('recommended');
     const [showFilters, setShowFilters] = useState(false);
     const [showSort, setShowSort] = useState(false);
+    const [quantity, setQuantity] = useState<number>(1);
+    const [appendStorage, setAppendStorage] = useState<boolean>(hasExistingStorage && category === 'storage');
     const [filters, setFilters] = useState<FilterState>({
         compatible_only: true,
         min_price: '',
         max_price: '',
     });
+
+    useEffect(() => {
+        if (category === 'ram' || category === 'storage') {
+            setQuantity(1);
+        }
+        if (category === 'storage') {
+            setAppendStorage(hasExistingStorage);
+        } else {
+            setAppendStorage(false);
+        }
+    }, [category, hasExistingStorage]);
 
     useEffect(() => {
         const controller = new AbortController();
@@ -159,6 +174,35 @@ export default function ComponentSelector({
                 </div>
             )}
 
+            {(category === 'ram' || category === 'storage') && (
+                <div className="mb-4 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                        <label className="text-sm text-[color:var(--text-soft)]">
+                            Quantity
+                            <input
+                                type="number"
+                                min={1}
+                                max={8}
+                                value={quantity}
+                                onChange={(e) => setQuantity(Math.max(1, Math.min(8, Number.parseInt(e.target.value || '1', 10) || 1)))}
+                                className="input-premium mt-1"
+                            />
+                        </label>
+
+                        {category === 'storage' && (
+                            <label className="flex items-center gap-2 text-sm text-[color:var(--text-soft)] mt-5 md:mt-0">
+                                <input
+                                    type="checkbox"
+                                    checked={appendStorage}
+                                    onChange={(e) => setAppendStorage(e.target.checked)}
+                                />
+                                Add as extra storage (keep existing drive)
+                            </label>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {loading ? (
                 <div className="flex items-center justify-center py-10">
                     <Loader2 className="w-6 h-6 animate-spin text-[color:var(--text-soft)]" />
@@ -185,7 +229,7 @@ export default function ComponentSelector({
                             <button
                                 key={product.product_id}
                                 onClick={() => {
-                                    onSelect(product);
+                                    onSelect(product, quantity, category === 'storage' ? appendStorage : false);
                                     onClose();
                                 }}
                                 className={`w-full rounded-2xl border transition-all duration-200 text-left p-3 md:p-4 flex items-start gap-4 ${isSelected

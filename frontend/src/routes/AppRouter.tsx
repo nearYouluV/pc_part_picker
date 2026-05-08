@@ -11,6 +11,7 @@ import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
 import DashboardPage from '../pages/DashboardPage';
 import BuilderPage from '../pages/BuilderPage';
+import AIChatPage from '../pages/AIChatPage';
 import ScrapingPage from '../pages/ScrapingPage';
 
 interface ProtectedRouteProps {
@@ -49,6 +50,14 @@ export default function AppRouter() {
                     element={
                         <ProtectedRoute>
                             <BuilderPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/ai-chat"
+                    element={
+                        <ProtectedRoute>
+                            <AIChatPage />
                         </ProtectedRoute>
                     }
                 />

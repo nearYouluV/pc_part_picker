@@ -52,6 +52,9 @@ export default function BuildCard({ build, onOpen, onDelete }: BuildCardProps) {
                         <div key={category} className="px-3 py-1 bg-[var(--surface-muted)] border border-[var(--border-soft)] text-[color:var(--text-main)] rounded-lg text-sm truncate max-w-xs" title={comp.name}>
                             <span className="font-semibold capitalize mr-2 text-sm">{category}:</span>
                             <span className="text-sm truncate">{comp.name}</span>
+                            {comp.source === 'ai' && (
+                                <span className="ml-2 inline-block text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AI</span>
+                            )}
                         </div>
                     ))}
                 </div>

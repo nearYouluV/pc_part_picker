@@ -134,8 +134,26 @@ export default function BuildSummaryPanel({
                             <div key={category} className="flex items-start justify-between p-3 muted-panel group transition-all duration-150 hover:shadow-sm hover:-translate-y-[2px]">
                                 <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium capitalize">{category}</p>
-                                    <p className="text-xs text-[color:var(--text-soft)] truncate">{comp.name}</p>
-                                    <p className="text-sm font-semibold">₴{comp.price}</p>
+                                    {category === 'storage' && (build.storage_components || []).length > 0 ? (
+                                        <div className="space-y-1 mt-1">
+                                            {(build.storage_components || []).map((storageItem) => (
+                                                <div key={`${storageItem.product_id}-${storageItem.name}`} className="flex items-center justify-between gap-2">
+                                                    <p className="text-xs text-[color:var(--text-soft)] truncate">{storageItem.name}{storageItem.quantity && storageItem.quantity > 1 ? ` x${storageItem.quantity}` : ''}</p>
+                                                    <p className="text-xs font-semibold">₴{(storageItem.price || 0) * (storageItem.quantity || 1)}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-xs text-[color:var(--text-soft)] truncate">{comp.name}{comp.quantity && comp.quantity > 1 ? ` x${comp.quantity}` : ''}</p>
+                                                {comp.source === 'ai' && (
+                                                    <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AI</span>
+                                                )}
+                                            </div>
+                                            <p className="text-sm font-semibold">₴{(comp.price || 0) * (comp.quantity || 1)}</p>
+                                        </>
+                                    )}
                                 </div>
                                 <button
                                     onClick={() => handleRemoveComponent(category)}

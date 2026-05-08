@@ -178,21 +178,32 @@ def _apply_category_filters(stmt, category: str, **filters):
 
 def serialize_build(build) -> BuildDetailResponse:
     selected_components = {}
+    storage_components = []
     total_price = 0
 
     for component in build.components:
         if not component.product:
             continue
 
-        selected_components[component.category.value] = {
+        quantity = getattr(component, "quantity", 1) or 1
+        component_payload = {
             "product_id": component.product.id,
             "external_id": component.product.external_id,
             "name": component.product.name,
             "price": component.product.price,
             "category": component.product.category.value,
-            "quantity": getattr(component, "quantity", 1) or 1,
+            "quantity": quantity,
+            "source": getattr(component, "source", "user"),
         }
-        total_price += component.product.price or 0
+
+        if component.category.value == "storage":
+            storage_components.append(component_payload)
+            if "storage" not in selected_components:
+                selected_components["storage"] = component_payload
+        else:
+            selected_components[component.category.value] = component_payload
+
+        total_price += (component.product.price or 0) * quantity
 
     return BuildDetailResponse(
         id=build.id,
@@ -201,6 +212,7 @@ def serialize_build(build) -> BuildDetailResponse:
         budget=build.budget,
         goal=build.goal.value,
         selected_components=selected_components,
+        storage_components=storage_components,
         total_price=total_price,
         compatibility_warnings=build_warnings(build),
         created_at=build.created_at,
@@ -561,6 +573,7 @@ async def add_component(
             category=payload.category,
             product_id=payload.product_id,
             quantity=payload.quantity,
+            append=payload.append,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

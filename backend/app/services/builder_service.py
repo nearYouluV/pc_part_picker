@@ -108,7 +108,16 @@ class BuilderService:
         await self.db.refresh(build)
         return build
 
-    async def add_or_replace_component(self, build_id: int, user_id: int, category: str, product_id: int, quantity: int | None = None) -> PCBuild:
+    async def add_or_replace_component(
+        self,
+        build_id: int,
+        user_id: int,
+        category: str,
+        product_id: int,
+        quantity: int | None = None,
+        source: str = "user",
+        append: bool = False,
+    ) -> PCBuild:
         normalized_category = category.strip().lower()
         if normalized_category not in ALLOWED_BUILD_CATEGORIES:
             raise ValueError(f"Unsupported category: {category}")
@@ -127,14 +136,50 @@ class BuilderService:
         if selected_product.category != category_enum:
             raise ValueError("Product category mismatch")
 
+        normalized_quantity = quantity or 1
+
+        # For storage we can keep multiple rows (e.g., SSD + HDD). If append is true,
+        # keep existing entries and add/merge the selected product.
+        if normalized_category == "storage" and append:
+            same_product_component = next(
+                (c for c in build.components if c.category == category_enum and c.product_id == product_id),
+                None,
+            )
+            if same_product_component:
+                same_product_component.quantity = normalized_quantity
+                same_product_component.source = source
+            else:
+                self.db.add(
+                    BuildComponent(
+                        build_id=build.id,
+                        category=category_enum,
+                        product_id=product_id,
+                        quantity=normalized_quantity,
+                        source=source,
+                    )
+                )
+
+            await self.db.commit()
+            refreshed = await self._get_build(build_id, user_id)
+            if not refreshed:
+                raise LookupError("Build not found")
+            return refreshed
+
         existing_component = next((c for c in build.components if c.category == category_enum), None)
         if existing_component:
             existing_component.product_id = product_id
-            if quantity is not None:
-                existing_component.quantity = quantity
+            existing_component.source = source
+            existing_component.quantity = normalized_quantity
         else:
-            q = quantity or 1
-            self.db.add(BuildComponent(build_id=build.id, category=category_enum, product_id=product_id, quantity=q))
+            self.db.add(
+                BuildComponent(
+                    build_id=build.id,
+                    category=category_enum,
+                    product_id=product_id,
+                    quantity=normalized_quantity,
+                    source=source,
+                )
+            )
 
         await self.db.commit()
         refreshed = await self._get_build(build_id, user_id)
@@ -173,9 +218,10 @@ class BuilderService:
             raise LookupError("Build not found")
 
         category_enum = CATEGORY_TO_ENUM[normalized_category]
-        existing_component = next((c for c in build.components if c.category == category_enum), None)
-        if existing_component:
-            await self.db.delete(existing_component)
+        matching_components = [c for c in build.components if c.category == category_enum]
+        if matching_components:
+            for component in matching_components:
+                await self.db.delete(component)
             await self.db.commit()
 
         refreshed = await self._get_build(build_id, user_id)
@@ -219,7 +265,7 @@ class BuilderService:
     async def add_component_to_build(self, build_id: int, category: str, product_id: int) -> None:
         """Add or replace a component in a build (used by AI endpoints)"""
         user_id = (await self.db.get(PCBuild, build_id)).user_id
-        await self.add_or_replace_component(build_id, user_id, category, product_id)
+        await self.add_or_replace_component(build_id, user_id, category, product_id, source="ai")
 
 
 

@@ -58,8 +58,24 @@ class ProductRecommendationResponse(BaseModel):
     image_small: str | None = None
     image: str | None = None
     brand: str | None = None
+    category: str | None = None
     subcategory: str | None = None
     specs: dict[str, object] = Field(default_factory=dict)
     score: float
     compatible: bool
     compatibility_details: list[str]
+
+
+class ProductDetailResponse(BaseModel):
+    product_id: int
+    external_id: int | None = None
+    name: str
+    price: int | None = None
+    image_small: str | None = None
+    image: str | None = None
+    brand: str | None = None
+    category: str | None = None
+    subcategory: str | None = None
+    description: str | None = None
+    specs: dict[str, object] = Field(default_factory=dict)
+    other_features: dict[str, object] | None = None

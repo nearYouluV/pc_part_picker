@@ -275,6 +275,7 @@ class ChatService:
             chat_id: str,
             message: str,
             role: str = "user",
+            metadata: Optional[Dict[str, Any]] = None,
             ) -> ChatMessage:
         """Create a new chat message"""
         msg = ChatMessage(
@@ -282,6 +283,7 @@ class ChatService:
             chat_id=chat_id,
             role=role,
             content=message,
+            metadata_json=metadata,
             created_at=datetime.now(timezone.utc)
         )
         db.add(msg)
@@ -303,4 +305,14 @@ class ChatService:
         )
 
         messages = result.scalars().all()
-        return [{"role": m.role, "content": m.content} for m in messages]
+        out: list[Dict[str, Any]] = []
+        for m in messages:
+            item: Dict[str, Any] = {"role": m.role, "content": m.content}
+            if getattr(m, "metadata_json", None) is not None:
+                item["metadata"] = m.metadata_json
+                # preserve backward-compat: expose changes directly if present
+                if isinstance(m.metadata_json, dict) and isinstance(m.metadata_json.get("changes"), list):
+                    item["changes"] = m.metadata_json.get("changes")
+            out.append(item)
+
+        return out

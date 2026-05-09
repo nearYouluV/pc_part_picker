@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Cpu, Home, Zap, LogOut } from 'lucide-react';
+import { Cpu, Home, Zap, Box, LogOut } from 'lucide-react';
 import { getUser, logout } from '../lib/auth';
 
 export default function TopNav() {
@@ -12,6 +12,7 @@ export default function TopNav() {
     const navItems = [
         { label: 'Dashboard', path: '/dashboard', icon: Home },
         { label: 'Builder', path: '/builder', icon: Cpu },
+        { label: 'Products', path: '/products', icon: Box },
         { label: 'Scraping', path: '/scraping', icon: Zap },
     ];
 

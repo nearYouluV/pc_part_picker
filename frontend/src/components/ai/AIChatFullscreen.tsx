@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, X, Send, Loader2 } from 'lucide-react';
 import { AIMessage } from './AIMessage';
 import type { AIChatChange, Build } from '../../types';
+import ProductModal from '../ProductModal';
 
 interface AIChatFullscreenProps {
     open: boolean;
@@ -32,6 +33,8 @@ export function AIChatFullscreen({
     const [sending, setSending] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [mounted, setMounted] = useState(false);
+    const [modalOpen, setModalOpen] = useState(false);
+    const [modalProductId, setModalProductId] = useState<number | null>(null);
 
     useEffect(() => {
         setMounted(true);
@@ -126,7 +129,16 @@ export function AIChatFullscreen({
                                                             )}
                                                             <div className="min-w-0">
                                                                 <p className="chat-change-label">Replaced</p>
-                                                                <p className="chat-change-name" title={change.from_component?.name || change.from_name || 'Previous component'}>
+                                                                <p
+                                                                    className="chat-change-name cursor-pointer"
+                                                                    title={change.from_component?.name || change.from_name || 'Previous component'}
+                                                                    onClick={() => {
+                                                                        if (change.from_component?.product_id) {
+                                                                            setModalProductId(change.from_component.product_id);
+                                                                            setModalOpen(true);
+                                                                        }
+                                                                    }}
+                                                                >
                                                                     {change.from_component?.name || change.from_name || 'Previous component'}
                                                                 </p>
                                                                 <p className="chat-change-price">{formatPrice(change.from_component?.price)}</p>
@@ -141,7 +153,16 @@ export function AIChatFullscreen({
                                                             )}
                                                             <div className="min-w-0">
                                                                 <p className="chat-change-label">Now using</p>
-                                                                <p className="chat-change-name" title={change.to_component?.name || change.to_name || 'New component'}>
+                                                                <p
+                                                                    className="chat-change-name cursor-pointer"
+                                                                    title={change.to_component?.name || change.to_name || 'New component'}
+                                                                    onClick={() => {
+                                                                        if (change.to_component?.product_id) {
+                                                                            setModalProductId(change.to_component.product_id);
+                                                                            setModalOpen(true);
+                                                                        }
+                                                                    }}
+                                                                >
                                                                     {change.to_component?.name || change.to_name || 'New component'}
                                                                 </p>
                                                                 <p className="chat-change-price">{formatPrice(change.to_component?.price)}</p>
@@ -184,7 +205,16 @@ export function AIChatFullscreen({
                                         buildComponents.map(([category, comp]) => (
                                             <div key={category} className="chat-window-sidebar-card rounded-lg border px-3 py-2">
                                                 <p className="text-xs font-semibold uppercase tracking-wide text-[var(--text-soft)]">{category}</p>
-                                                <p className="text-sm text-[var(--text-main)] mt-1 truncate" title={comp.name}>{comp.name}</p>
+                                                <p
+                                                    className="text-sm text-[var(--text-main)] mt-1 truncate cursor-pointer"
+                                                    title={comp.name}
+                                                    onClick={() => {
+                                                        if (comp.product_id) {
+                                                            setModalProductId(comp.product_id);
+                                                            setModalOpen(true);
+                                                        }
+                                                    }}
+                                                >{comp.name}</p>
                                                 <div className="mt-1 flex items-center justify-between">
                                                     <p className="text-xs text-[var(--text-soft)]">₴{comp.price?.toLocaleString?.() ?? comp.price}</p>
                                                     {comp.source === 'ai' && (
@@ -280,6 +310,7 @@ export function AIChatFullscreen({
                     </section>
                 </div>
             </div>
+            <ProductModal productId={modalProductId} open={modalOpen} onClose={() => setModalOpen(false)} />
         </div>
     );
 }

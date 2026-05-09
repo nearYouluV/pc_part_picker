@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ComponentRecommendation, Product } from '../types';
+import ProductDetail from './ProductDetail';
 import apiClient from '../lib/apiClient';
 import { Loader2, Search, SlidersHorizontal, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -36,6 +37,8 @@ export default function ComponentSelector({
     const [showFilters, setShowFilters] = useState(false);
     const [showSort, setShowSort] = useState(false);
     const [appendStorage, setAppendStorage] = useState<boolean>(hasExistingStorage && category === 'storage');
+    const [showModal, setShowModal] = useState(false);
+    const [modalProduct, setModalProduct] = useState<Product | null>(null);
     const [filters, setFilters] = useState<FilterState>({
         compatible_only: true,
         min_price: '',
@@ -205,14 +208,11 @@ export default function ComponentSelector({
                                     ? 'Non-modular'
                                     : null;
 
+                        // Render as card with Choose button and clickable name to open details
                         return (
-                            <button
+                            <div
                                 key={product.product_id}
-                                onClick={() => {
-                                    onSelect(product, 1, category === 'storage' ? appendStorage : false);
-                                    onClose();
-                                }}
-                                className={`w-full rounded-2xl border transition-all duration-200 text-left p-3 md:p-4 flex items-start gap-4 ${isSelected
+                                className={`w-full rounded-2xl border transition-all duration-200 p-3 md:p-4 flex items-start gap-4 ${isSelected
                                     ? 'border-[var(--primary)] bg-[var(--surface-muted)] shadow-sm'
                                     : 'border-[var(--border-soft)] hover:shadow-md hover:-translate-y-[1px] hover:border-[var(--border-strong)] bg-[var(--surface)]'
                                     }`}
@@ -228,7 +228,16 @@ export default function ComponentSelector({
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
-                                            <p className="font-semibold truncate text-[color:var(--text-main)]">{product.name}</p>
+                                            <p
+                                                className="font-semibold truncate text-[color:var(--text-main)] cursor-pointer"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setModalProduct(product);
+                                                    setShowModal(true);
+                                                }}
+                                            >
+                                                {product.name}
+                                            </p>
                                             <p className="text-sm text-[color:var(--text-main)] mt-1 truncate">
                                                 {product.brand || product.subcategory || `ID: ${product.external_id ?? product.product_id}`}
                                             </p>
@@ -268,11 +277,41 @@ export default function ComponentSelector({
                                         ))}
                                     </div>
                                 </div>
-                            </button>
+
+                                <div className="flex-shrink-0 ml-2 self-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onSelect(product, 1, category === 'storage' ? appendStorage : false);
+                                            onClose();
+                                        }}
+                                        className="px-3 py-2 rounded-md bg-blue-600 text-sm font-semibold"
+                                    >
+                                        Choose
+                                    </button>
+                                </div>
+                            </div>
                         );
                     })}
                 </div>
             )}
+            {/* Product detail modal for cards */}
+            {showModal && modalProduct && (
+                <>
+                    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-20">
+                        <div className="absolute inset-0 bg-black/60" onClick={() => setShowModal(false)} />
+                        <div className="relative w-full max-w-4xl p-4">
+                            <div className="bg-[#071126] rounded-xl shadow-lg max-h-[80vh] w-full overflow-auto">
+                                <ProductDetail product={modalProduct} />
+                                <div className="p-4 flex justify-end">
+                                    <button onClick={() => setShowModal(false)} className="px-4 py-2 rounded-md bg-[#22344a]">Close</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
         </div>
     );
 }
+

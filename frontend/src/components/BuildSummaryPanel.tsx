@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Build } from '../types';
 import { Trash2, AlertCircle } from 'lucide-react';
 import apiClient from '../lib/apiClient';
+import ProductModal from './ProductModal';
 import { toast } from 'sonner';
 
 interface BuildSummaryPanelProps {
@@ -66,6 +67,14 @@ export default function BuildSummaryPanel({
         } catch (error) {
             toast.error(`Failed to remove ${category}`);
         }
+    };
+
+    const [modalOpen, setModalOpen] = useState(false);
+    const [modalProductId, setModalProductId] = useState<number | null>(null);
+
+    const openProductModal = (productId: number) => {
+        setModalProductId(productId);
+        setModalOpen(true);
     };
 
     const budgetStatus = build.budget && build.total_price > build.budget ? 'Over budget' : 'Within budget';
@@ -158,7 +167,10 @@ export default function BuildSummaryPanel({
                                     ) : (
                                         <>
                                             <div className="flex items-center gap-2">
-                                                <p className="text-xs text-[color:var(--text-soft)] truncate">{comp.name}{comp.quantity && comp.quantity > 1 ? ` x${comp.quantity}` : ''}</p>
+                                                <p
+                                                    className="text-xs text-[color:var(--text-soft)] truncate cursor-pointer"
+                                                    onClick={() => openProductModal(comp.product_id)}
+                                                >{comp.name}{comp.quantity && comp.quantity > 1 ? ` x${comp.quantity}` : ''}</p>
                                                 {comp.source === 'ai' && (
                                                     <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AI</span>
                                                 )}
@@ -209,6 +221,7 @@ export default function BuildSummaryPanel({
             >
                 {saving ? 'Saving...' : hasUnsavedChanges ? 'Save Changes' : 'Saved'}
             </button>
+            <ProductModal productId={modalProductId} open={modalOpen} onClose={() => setModalOpen(false)} />
         </div>
     );
 }

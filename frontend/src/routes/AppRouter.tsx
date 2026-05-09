@@ -13,6 +13,8 @@ import DashboardPage from '../pages/DashboardPage';
 import BuilderPage from '../pages/BuilderPage';
 import AIChatPage from '../pages/AIChatPage';
 import ScrapingPage from '../pages/ScrapingPage';
+import ProductPage from '../pages/ProductPage';
+import ProductsPage from '../pages/ProductsPage';
 
 interface ProtectedRouteProps {
     children: ReactNode;
@@ -66,6 +68,22 @@ export default function AppRouter() {
                     element={
                         <ProtectedRoute>
                             <ScrapingPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/product/:id"
+                    element={
+                        <ProtectedRoute>
+                            <ProductPage />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/products"
+                    element={
+                        <ProtectedRoute>
+                            <ProductsPage />
                         </ProtectedRoute>
                     }
                 />

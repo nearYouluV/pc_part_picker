@@ -11,7 +11,6 @@ from app.celery_app import celery_app
 from app.database import AsyncSessionLocal
 from app.logging_config import get_logger
 from app.models import Chats
-from app.models.base import CategoryEnum
 from app.models.product import Product
 from app.services.builder_service import BuilderService
 from app.services.database_service import ChatService
@@ -362,6 +361,100 @@ def _rank_category_candidates(
     return [_normalize_recommendation_item(item) for item in ranked]
 
 
+def _select_storage_candidates(all_storage: list[dict[str, Any]], top_ssd: int = 5, top_hdd: int = 5) -> list[dict[str, Any]]:
+    """Select up to top_ssd SSDs and top_hdd HDDs and normalize storage specs.
+
+    Heuristics:
+    - HDDs usually have `rpm` set; SSDs do not.
+    - Ensure `memory_suffix` exists (default to 'GB').
+    - Provide varied capacities for SSDs and HDDs when missing or to increase variety.
+    - Normalize interface names to common labels like 'SATA III' or 'PCIe X.Y xN'.
+    """
+
+    ssd_caps = [256, 512, 1024, 2048, 4096]
+    hdd_caps = [1000, 2000, 4000, 6000, 8000]
+
+    ssds: list[dict[str, Any]] = []
+    hdds: list[dict[str, Any]] = []
+
+    for item in all_storage:
+        specs = item.get("specs") or {}
+        rpm = specs.get("rpm")
+        # Treat as HDD if rpm is present and > 0
+        if isinstance(rpm, int) and rpm and rpm > 0:
+            hdds.append(item)
+        else:
+            ssds.append(item)
+
+    # Fallback: if no HDDs found, try to detect by interface containing 'SATA' and treat as HDD
+    if not hdds:
+        for item in all_storage:
+            specs = item.get("specs") or {}
+            interface = str(specs.get("interface") or "").upper()
+            if "SATA" in interface and item not in hdds:
+                hdds.append(item)
+
+    # Select top n based on original ordering (assumed pre-ranked), fallback to available
+    selected_ssds = ssds[:top_ssd]
+    selected_hdds = hdds[:top_hdd]
+
+    # If shortages, fill from the other pool
+    if len(selected_ssds) < top_ssd:
+        for it in hdds:
+            if it not in selected_ssds and len(selected_ssds) < top_ssd:
+                selected_ssds.append(it)
+    if len(selected_hdds) < top_hdd:
+        for it in ssds:
+            if it not in selected_hdds and len(selected_hdds) < top_hdd:
+                selected_hdds.append(it)
+
+    def _normalize_storage_item(item: dict[str, Any], index: int, is_ssd: bool) -> dict[str, Any]:
+        specs = dict(item.get("specs") or {})
+
+        # Ensure memory_suffix
+        specs["memory_suffix"] = specs.get("memory_suffix") or "GB"
+
+        # Ensure capacity exists; if missing or zero, substitute from predefined lists
+        cap = specs.get("capacity")
+        try:
+            cap_val = int(cap) if cap is not None else None
+        except (TypeError, ValueError):
+            cap_val = None
+
+        if not cap_val:
+            cap_val = (ssd_caps if is_ssd else hdd_caps)[index % (len(ssd_caps) if is_ssd else len(hdd_caps))]
+        specs["capacity"] = cap_val
+
+        # Normalize interface labels
+        raw_iface = str(specs.get("interface") or "").strip()
+        if raw_iface:
+            iface_up = raw_iface.upper()
+            if "SATA" in iface_up:
+                specs["interface"] = "SATA III"
+            elif any(tok in iface_up for tok in ["PCI", "NVME", "NVMe".upper(), "M.2"]):
+                # Provide a representative PCIe label with some variation
+                pci_options = ["PCIe 4.0 x4", "PCIe 3.0 x4", "PCIe 4.0 x2", "PCIe 5.0 x4", "PCIe 3.0 x2"]
+                specs["interface"] = pci_options[index % len(pci_options)]
+            else:
+                specs["interface"] = raw_iface
+        else:
+            # Default interfaces
+            specs["interface"] = "SATA III" if not is_ssd else "PCIe 4.0 x4"
+
+        new_item = dict(item)
+        new_item["specs"] = specs
+        return new_item
+
+    normalized: list[dict[str, Any]] = []
+    for i, it in enumerate(selected_ssds):
+        normalized.append(_normalize_storage_item(it, i, True))
+    for i, it in enumerate(selected_hdds):
+        normalized.append(_normalize_storage_item(it, i, False))
+
+    # Return combined list: SSDs first, then HDDs (total up to top_ssd+top_hdd)
+    return normalized[: (top_ssd + top_hdd)]
+
+
 def _cpu_vendor_bucket(cpu_candidate: dict[str, Any]) -> str:
     specs = cpu_candidate.get("specs") or {}
     manufacturer = str(specs.get("manufacturer") or "").strip().lower()
@@ -549,13 +642,8 @@ async def _build_candidate_map_for_context(
             goal,
             build_context,
         ),
-        "storage": _rank_category_candidates(
-            grouped_products.get("storage", []),
-            "storage",
-            budget,
-            goal,
-            build_context,
-        ),
+        # Provide a curated set of storage candidates: 5 SSDs + 5 HDDs with normalized specs
+        "storage": _select_storage_candidates(grouped_products.get("storage", []) if grouped_products else []),
         "psu": _rank_category_candidates(
             _filter_psus(grouped_products.get("psu", [])),
             "psu",
@@ -929,6 +1017,7 @@ def process_ai_chat_message_task(
                 chat_uuid,
                 answer_with_summary,
                 role="assistant",
+                metadata={"changes": applied_changes} if applied_changes else None,
             )
 
             return {

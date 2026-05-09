@@ -24,14 +24,14 @@ export default function RegisterPage() {
         setLoading(true);
 
         try {
-            const response = await apiClient.post('/api/auth/register', {
+            const response = await apiClient.post('/auth/register', {
                 username,
                 email,
                 password,
             });
 
             // Auto login after registration
-            const loginResponse = await apiClient.post('/api/auth/login', {
+            const loginResponse = await apiClient.post('/auth/login', {
                 email,
                 password,
             });

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends
 from contextlib import asynccontextmanager
 import os
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, builder, chat, scraping
+from app.api import auth, builder, chat, scraping, product
 from app.services.auth_service import get_current_active_user
 from app.logging_config import configure_logging, get_logger
 configure_logging()
@@ -57,8 +57,9 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
-app.include_router(scraping.router)
-app.include_router(builder.router)
+app.include_router(scraping.router, prefix="/api")
+app.include_router(builder.router, prefix="/api")
+app.include_router(product.router, prefix="/api")
 
 
 

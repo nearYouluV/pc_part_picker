@@ -91,9 +91,10 @@ export function useAIChat(): UseAIChatReturn {
             const history = await aiChatAPI.getHistory(chatId);
             if (Array.isArray(history)) {
                 setMessages(
-                    history.map((message: { role: 'user' | 'assistant'; content: string }) => ({
+                    history.map((message: any) => ({
                         role: message.role,
                         content: message.content,
+                        changes: message.changes || (message.metadata && message.metadata.changes) || undefined,
                     }))
                 );
             }

@@ -16,7 +16,7 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            const response = await apiClient.post('/api/auth/login', {
+            const response = await apiClient.post('/auth/login', {
                 email,
                 password,
             });
@@ -24,7 +24,7 @@ export default function LoginPage() {
             setAuthToken(response.data);
 
             // Fetch user info
-            const userResponse = await apiClient.get('/api/auth/me');
+            const userResponse = await apiClient.get('/auth/me');
             setUser(userResponse.data);
 
             toast.success('Login successful');

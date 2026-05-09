@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 import type { Product } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
 
 const apiClient: AxiosInstance = axios.create({
     baseURL: API_BASE_URL,
@@ -41,7 +41,7 @@ apiClient.interceptors.response.use(
 // AI Build Methods
 export const aiBuildAPI = {
     async generateBuild(buildId: number, budget: number, goal: string, candidates: Record<string, Array<Product>>, selectedComponents?: Record<string, number>) {
-        const response = await apiClient.post('/api/ai/build', {
+        const response = await apiClient.post('/ai/build', {
             build_id: buildId,
             user_config: { budget, goal },
             candidates: candidates,
@@ -54,14 +54,14 @@ export const aiBuildAPI = {
 // AI Chat Methods
 export const aiChatAPI = {
     async createChat(buildId: number) {
-        const response = await apiClient.post('/api/ai/chat', {
+        const response = await apiClient.post('/ai/chat', {
             build_id: buildId,
         });
         return response.data;
     },
 
     async sendMessage(chatId: string, message: string, promptSource: string = 'chat') {
-        const response = await apiClient.post('/api/ai/chat/message', {
+        const response = await apiClient.post('/ai/chat/message', {
             chat_id: chatId,
             message,
             prompt_source: promptSource,
@@ -70,7 +70,7 @@ export const aiChatAPI = {
     },
 
     async getHistory(chatId: string) {
-        const response = await apiClient.get(`/api/ai/chat/history/${chatId}`);
+        const response = await apiClient.get(`/ai/chat/history/${chatId}`);
         return response.data;
     },
 };
@@ -78,7 +78,36 @@ export const aiChatAPI = {
 // AI Task Methods
 export const aiTaskAPI = {
     async getTaskStatus(taskId: string) {
-        const response = await apiClient.get(`/api/ai/task/${taskId}`);
+        const response = await apiClient.get(`/ai/task/${taskId}`);
+        return response.data;
+    },
+};
+
+// Product Methods
+export const productAPI = {
+    async getProduct(productId: number) {
+        const response = await apiClient.get(`/product/${productId}`);
+        return response.data;
+    },
+    async search(query: string) {
+        const response = await apiClient.get(`/product/search`, { params: { query } });
+        return response.data;
+    },
+};
+
+// Builder Methods
+export const builderAPI = {
+    async getBuilds() {
+        const response = await apiClient.get(`/builder/builds`);
+        return response.data;
+    },
+    async addComponent(buildId: number, category: string, productId: number, quantity: number | null = null, append: boolean = false) {
+        const response = await apiClient.post(`/builder/${buildId}/add`, {
+            category,
+            product_id: productId,
+            quantity,
+            append,
+        });
         return response.data;
     },
 };

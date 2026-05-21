@@ -19,13 +19,15 @@ export default function BuildSummaryPanel({
     const [name, setName] = useState(build.name);
     const [budget, setBudget] = useState(build.budget ? String(build.budget) : '');
     const [goal, setGoal] = useState(build.goal);
+    const [isPublic, setIsPublic] = useState(Boolean(build.is_public));
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         setName(build.name);
         setBudget(build.budget ? String(build.budget) : '');
         setGoal(build.goal);
-    }, [build.id, build.name, build.budget, build.goal]);
+        setIsPublic(Boolean(build.is_public));
+    }, [build.id, build.name, build.budget, build.goal, build.is_public]);
 
     const normalizedName = name.trim() || build.name;
     const parsedBudget = budget.trim() ? parseInt(budget, 10) : null;
@@ -33,7 +35,8 @@ export default function BuildSummaryPanel({
     const hasUnsavedChanges =
         normalizedName !== build.name ||
         parsedBudget !== originalBudget ||
-        goal !== build.goal;
+        goal !== build.goal ||
+        isPublic !== Boolean(build.is_public);
 
     const handleSaveBuild = async () => {
         if (!hasUnsavedChanges) return;
@@ -44,6 +47,7 @@ export default function BuildSummaryPanel({
                 name: normalizedName,
                 budget: parsedBudget,
                 goal,
+                is_public: isPublic,
             });
             onBuildUpdate(response.data);
             toast.success('Build saved successfully');
@@ -79,6 +83,16 @@ export default function BuildSummaryPanel({
 
     const budgetStatus = build.budget && build.total_price > build.budget ? 'Over budget' : 'Within budget';
     const budgetColor = build.budget && build.total_price > build.budget ? 'text-rose-700' : 'text-[color:var(--text-soft)]';
+    const publicBuildUrl = `${window.location.origin}/community/builds/${build.id}`;
+
+    const handleCopyPublicLink = async () => {
+        try {
+            await navigator.clipboard.writeText(publicBuildUrl);
+            toast.success('Public link copied');
+        } catch {
+            toast.error('Failed to copy public link');
+        }
+    };
 
     return (
         <div className="soft-card p-6 sticky top-24 transition-all duration-200">
@@ -118,6 +132,19 @@ export default function BuildSummaryPanel({
                         />
                     </div>
                 </div>
+
+                <label className="mt-4 flex items-start gap-3 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-soft)] p-3">
+                    <input
+                        type="checkbox"
+                        checked={isPublic}
+                        onChange={(e) => setIsPublic(e.target.checked)}
+                        className="mt-1 h-4 w-4 rounded border-[var(--border-strong)]"
+                    />
+                    <span className="text-sm">
+                        <span className="block font-semibold text-[color:var(--text-main)]">Publish to community</span>
+                        <span className="block text-[color:var(--text-soft)]">Other users can view, rate, and review this build.</span>
+                    </span>
+                </label>
             </div>
 
             <div className="mb-6 p-4 muted-panel">
@@ -221,6 +248,16 @@ export default function BuildSummaryPanel({
             >
                 {saving ? 'Saving...' : hasUnsavedChanges ? 'Save Changes' : 'Saved'}
             </button>
+
+            {build.is_public && (
+                <button
+                    type="button"
+                    onClick={handleCopyPublicLink}
+                    className="mt-3 w-full min-h-11 btn-secondary"
+                >
+                    Copy public link
+                </button>
+            )}
             <ProductModal productId={modalProductId} open={modalOpen} onClose={() => setModalOpen(false)} />
         </div>
     );

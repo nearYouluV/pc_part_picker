@@ -3,9 +3,20 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from app.builder_schemas import AddComponentRequest, BuildCreateRequest, BuildDetailResponse, BuildUpdateRequest, ProductRecommendationResponse
+from app.builder_schemas import (
+    AddComponentRequest,
+    BuildCreateRequest,
+    BuildDetailResponse,
+    BuildReviewRequest,
+    BuildReviewView,
+    BuildSuggestionRequest,
+    BuildSuggestionView,
+    BuildUpdateRequest,
+    ProductRecommendationResponse,
+)
 from app.database import get_async_db
 from app.models.base import CategoryEnum
+from app.models.build import BuildReview, BuildSuggestion
 from app.models.cpu import CPU
 from app.models.gpu import GPU
 from app.models.motherboard import Motherboard
@@ -176,7 +187,51 @@ def _apply_category_filters(stmt, category: str, **filters):
     return stmt
 
 
-def serialize_build(build) -> BuildDetailResponse:
+def serialize_review(review: BuildReview) -> BuildReviewView:
+    username = review.user.username if review.user else "Unknown"
+    return BuildReviewView(
+        id=review.id,
+        build_id=review.build_id,
+        user_id=review.user_id,
+        username=username,
+        rating=review.rating,
+        comment=review.comment,
+        created_at=review.created_at,
+        updated_at=review.updated_at,
+    )
+
+
+def serialize_suggestion(suggestion: BuildSuggestion) -> BuildSuggestionView:
+    suggested_product = suggestion.suggested_product
+    return BuildSuggestionView(
+        id=suggestion.id,
+        build_id=suggestion.build_id,
+        user_id=suggestion.user_id,
+        username=suggestion.user.username if suggestion.user else "Unknown",
+        category=suggestion.category.value,
+        suggested_product_id=suggestion.suggested_product_id,
+        suggested_product_name=suggested_product.name if suggested_product else "Unknown",
+        suggested_product_price=suggested_product.price if suggested_product else 0,
+        quantity=suggestion.quantity,
+        comment=suggestion.comment,
+        status=suggestion.status,
+        applied_by_user_id=suggestion.applied_by_user_id,
+        applied_by_username=suggestion.applied_by_user.username if suggestion.applied_by_user else None,
+        applied_at=suggestion.applied_at,
+        created_at=suggestion.created_at,
+        updated_at=suggestion.updated_at,
+    )
+
+
+def serialize_build(
+    build,
+    *,
+    average_rating: float | None = None,
+    review_count: int | None = None,
+    reviews: list[BuildReview] | None = None,
+    suggestions: list[BuildSuggestion] | None = None,
+    owner_username: str | None = None,
+) -> BuildDetailResponse:
     selected_components = {}
     storage_components = []
     total_price = 0
@@ -211,10 +266,16 @@ def serialize_build(build) -> BuildDetailResponse:
         name=build.name,
         budget=build.budget,
         goal=build.goal.value,
+        is_public=bool(getattr(build, "is_public", False)),
+        owner_username=owner_username or (build.user.username if getattr(build, "user", None) else None),
+        average_rating=average_rating,
+        review_count=review_count if review_count is not None else len(reviews or []),
         selected_components=selected_components,
         storage_components=storage_components,
         total_price=total_price,
         compatibility_warnings=build_warnings(build),
+        reviews=[serialize_review(review) for review in (reviews or [])],
+        suggestions=[serialize_suggestion(suggestion) for suggestion in (suggestions or [])],
         created_at=build.created_at,
         updated_at=build.updated_at,
     )
@@ -249,6 +310,175 @@ async def list_builds(
     service = BuilderService(db)
     builds = await service.list_builds(current_user.id)
     return [serialize_build(build) for build in builds]
+
+
+@router.get("/public-builds", response_model=list[BuildDetailResponse])
+async def list_public_builds(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    builds = await service.list_public_builds()
+    serialized_builds = []
+    for build in builds:
+        reviews = list(getattr(build, "reviews", []) or [])
+        average_rating = round(sum(review.rating for review in reviews) / len(reviews), 2) if reviews else None
+        serialized_builds.append(
+            serialize_build(
+                build,
+                average_rating=average_rating,
+                review_count=len(reviews),
+                reviews=reviews,
+                owner_username=build.user.username if getattr(build, "user", None) else None,
+            )
+        )
+
+    return serialized_builds
+
+
+@router.get("/public-builds/{build_id}", response_model=BuildDetailResponse)
+async def get_public_build(
+    build_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    build = await service.get_public_build(build_id)
+    if not build:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Build not found")
+
+    reviews = getattr(build, "reviews", []) or []
+    suggestions = []
+    if current_user.id == build.user_id:
+        suggestions = await service.list_build_suggestions(build_id)
+    average_rating = round(sum(review.rating for review in reviews) / len(reviews), 2) if reviews else None
+
+    return serialize_build(
+        build,
+        average_rating=average_rating,
+        review_count=len(reviews),
+        reviews=reviews,
+        suggestions=suggestions,
+        owner_username=build.user.username if getattr(build, "user", None) else None,
+    )
+
+
+@router.get("/public-builds/{build_id}/reviews", response_model=list[BuildReviewView])
+async def list_public_build_reviews(
+    build_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    build = await service.get_public_build(build_id)
+    if not build:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Build not found")
+
+    reviews = await service.list_build_reviews(build_id)
+    return [serialize_review(review) for review in reviews]
+
+
+@router.post("/public-builds/{build_id}/reviews", response_model=BuildReviewView)
+async def create_public_build_review(
+    build_id: int,
+    payload: BuildReviewRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    try:
+        review = await service.upsert_build_review(
+            build_id=build_id,
+            user_id=current_user.id,
+            rating=payload.rating,
+            comment=payload.comment,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    return serialize_review(review)
+
+
+@router.get("/public-builds/{build_id}/suggestions", response_model=list[BuildSuggestionView])
+async def list_public_build_suggestions(
+    build_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    build = await service.get_public_build(build_id)
+    if not build:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Build not found")
+    if build.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the build owner can view suggestions")
+
+    suggestions = await service.list_build_suggestions(build_id)
+    return [serialize_suggestion(suggestion) for suggestion in suggestions]
+
+
+@router.post("/public-builds/{build_id}/suggestions", response_model=BuildSuggestionView)
+async def create_public_build_suggestion(
+    build_id: int,
+    payload: BuildSuggestionRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    try:
+        suggestion = await service.create_build_suggestion(
+            build_id=build_id,
+            user_id=current_user.id,
+            category=payload.category,
+            suggested_product_id=payload.suggested_product_id,
+            quantity=payload.quantity,
+            comment=payload.comment,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return serialize_suggestion(suggestion)
+
+
+@router.post("/public-builds/{build_id}/suggestions/{suggestion_id}/apply", response_model=BuildSuggestionView)
+async def apply_public_build_suggestion(
+    build_id: int,
+    suggestion_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    try:
+        suggestion = await service.apply_build_suggestion(build_id, current_user.id, suggestion_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return serialize_suggestion(suggestion)
+
+
+@router.post("/public-builds/{build_id}/suggestions/{suggestion_id}/reject", response_model=BuildSuggestionView)
+async def reject_public_build_suggestion(
+    build_id: int,
+    suggestion_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    service = BuilderService(db)
+    try:
+        suggestion = await service.reject_build_suggestion(build_id, current_user.id, suggestion_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    return serialize_suggestion(suggestion)
 
 
 @router.get("/category/{category}", response_model=list[ProductRecommendationResponse])
@@ -613,6 +843,7 @@ async def update_build(
             name=payload.name,
             budget=payload.budget,
             goal=payload.goal,
+            is_public=payload.is_public,
         )
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))

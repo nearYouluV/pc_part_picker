@@ -112,4 +112,48 @@ export const builderAPI = {
     },
 };
 
+export const communityAPI = {
+    async getPublicBuilds() {
+        const response = await apiClient.get('/builder/public-builds');
+        return response.data;
+    },
+    async getPublicBuild(buildId: number) {
+        const response = await apiClient.get(`/builder/public-builds/${buildId}`);
+        return response.data;
+    },
+    async getReviews(buildId: number) {
+        const response = await apiClient.get(`/builder/public-builds/${buildId}/reviews`);
+        return response.data;
+    },
+    async submitReview(buildId: number, rating: number, comment?: string | null) {
+        const response = await apiClient.post(`/builder/public-builds/${buildId}/reviews`, {
+            rating,
+            comment,
+        });
+        return response.data;
+    },
+    async getSuggestions(buildId: number) {
+        const response = await apiClient.get(`/builder/public-builds/${buildId}/suggestions`);
+        return response.data;
+    },
+    async submitSuggestion(buildId: number, payload: { category: string; suggested_product_id: number; quantity: number; comment?: string | null; }) {
+        const response = await apiClient.post(`/builder/public-builds/${buildId}/suggestions`, payload);
+        return response.data;
+    },
+    async applySuggestion(buildId: number, suggestionId: number) {
+        const response = await apiClient.post(`/builder/public-builds/${buildId}/suggestions/${suggestionId}/apply`);
+        return response.data;
+    },
+    async rejectSuggestion(buildId: number, suggestionId: number) {
+        const response = await apiClient.post(`/builder/public-builds/${buildId}/suggestions/${suggestionId}/reject`);
+        return response.data;
+    },
+    async setVisibility(buildId: number, isPublic: boolean) {
+        const response = await apiClient.put(`/builder/${buildId}`, {
+            is_public: isPublic,
+        });
+        return response.data;
+    },
+};
+
 export default apiClient;

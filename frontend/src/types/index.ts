@@ -64,6 +64,36 @@ export interface AIBuildTaskResult {
     status?: string;
 }
 
+export interface BuildReview {
+    id: number;
+    build_id: number;
+    user_id: number;
+    username: string;
+    rating: number;
+    comment?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface BuildSuggestion {
+    id: number;
+    build_id: number;
+    user_id: number;
+    username: string;
+    category: string;
+    suggested_product_id: number;
+    suggested_product_name: string;
+    suggested_product_price: number;
+    quantity: number;
+    comment?: string | null;
+    status: string;
+    applied_by_user_id?: number | null;
+    applied_by_username?: string | null;
+    applied_at?: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface Build {
     id: number;
     user_id: number;
@@ -74,6 +104,12 @@ export interface Build {
     storage_components?: Product[];
     total_price: number;
     compatibility_warnings: string[];
+    is_public?: boolean;
+    owner_username?: string | null;
+    average_rating?: number | null;
+    review_count?: number;
+    reviews?: BuildReview[];
+    suggestions?: BuildSuggestion[];
     created_at: string;
     updated_at: string;
 }

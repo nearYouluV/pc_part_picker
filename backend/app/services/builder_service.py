@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.builder_schemas import ALLOWED_BUILD_CATEGORIES, ALLOWED_BUILD_GOALS
 from app.models.base import CategoryEnum
-from app.models.build import BuildComponent, BuildGoalEnum, PCBuild
+from app.models.build import BuildComponent, BuildGoalEnum, BuildReview, BuildSuggestion, PCBuild
 from app.models.product import Product
 
 
@@ -23,34 +25,45 @@ class BuilderService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    def _build_options(self, include_reviews: bool = False):
+        options = [
+            joinedload(PCBuild.user),
+            joinedload(PCBuild.components)
+            .joinedload(BuildComponent.product)
+            .joinedload(Product.cpu_spec),
+            joinedload(PCBuild.components)
+            .joinedload(BuildComponent.product)
+            .joinedload(Product.gpu_spec),
+            joinedload(PCBuild.components)
+            .joinedload(BuildComponent.product)
+            .joinedload(Product.motherboard_spec),
+            joinedload(PCBuild.components)
+            .joinedload(BuildComponent.product)
+            .joinedload(Product.ram_spec),
+            joinedload(PCBuild.components)
+            .joinedload(BuildComponent.product)
+            .joinedload(Product.psu_spec),
+            joinedload(PCBuild.components)
+            .joinedload(BuildComponent.product)
+            .joinedload(Product.storage_spec),
+            joinedload(PCBuild.components)
+            .joinedload(BuildComponent.product)
+            .joinedload(Product.cooler_spec),
+        ]
+
+        if include_reviews:
+            options.extend([
+                joinedload(PCBuild.reviews).joinedload(BuildReview.user),
+            ])
+
+        return options
+
     def _build_stmt(self, build_id: int, user_id: int):
         return (
             select(PCBuild)
             .where(PCBuild.id == build_id, PCBuild.user_id == user_id)
             .execution_options(populate_existing=True)
-            .options(
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.cpu_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.gpu_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.motherboard_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.ram_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.psu_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.storage_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.cooler_spec),
-            )
+            .options(*self._build_options())
         )
 
     def _list_builds_stmt(self, user_id: int):
@@ -59,29 +72,16 @@ class BuilderService:
             .where(PCBuild.user_id == user_id)
             .order_by(PCBuild.created_at.desc())
             .execution_options(populate_existing=True)
-            .options(
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.cpu_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.gpu_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.motherboard_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.ram_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.psu_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.storage_spec),
-                joinedload(PCBuild.components)
-                .joinedload(BuildComponent.product)
-                .joinedload(Product.cooler_spec),
-            )
+            .options(*self._build_options())
+        )
+
+    def _public_build_stmt(self):
+        return (
+            select(PCBuild)
+            .where(PCBuild.is_public.is_(True))
+            .order_by(PCBuild.updated_at.desc())
+            .execution_options(populate_existing=True)
+            .options(*self._build_options(include_reviews=True))
         )
 
     async def _get_build(self, build_id: int, user_id: int) -> PCBuild | None:
@@ -90,6 +90,10 @@ class BuilderService:
 
     async def list_builds(self, user_id: int) -> list[PCBuild]:
         result = await self.db.execute(self._list_builds_stmt(user_id))
+        return list(result.unique().scalars().all())
+
+    async def list_public_builds(self) -> list[PCBuild]:
+        result = await self.db.execute(self._public_build_stmt())
         return list(result.unique().scalars().all())
 
     async def create_build(self, user_id: int, name: str, budget: int | None, goal: str) -> PCBuild:
@@ -187,7 +191,15 @@ class BuilderService:
             raise LookupError("Build not found")
         return refreshed
 
-    async def update_build(self, build_id: int, user_id: int, name: str | None, budget: int | None, goal: str | None) -> PCBuild:
+    async def update_build(
+        self,
+        build_id: int,
+        user_id: int,
+        name: str | None,
+        budget: int | None,
+        goal: str | None,
+        is_public: bool | None = None,
+    ) -> PCBuild:
         build = await self._get_build(build_id, user_id)
         if not build:
             raise LookupError("Build not found")
@@ -202,11 +214,239 @@ class BuilderService:
                 raise ValueError(f"Unsupported goal: {goal}")
             build.goal = BuildGoalEnum(normalized_goal)
 
+        if is_public is not None:
+            build.is_public = is_public
+
         await self.db.commit()
         refreshed = await self._get_build(build_id, user_id)
         if not refreshed:
             raise LookupError("Build not found")
         return refreshed
+
+    async def get_public_build(self, build_id: int) -> PCBuild | None:
+        result = await self.db.execute(
+            select(PCBuild)
+            .where(PCBuild.id == build_id, PCBuild.is_public.is_(True))
+            .execution_options(populate_existing=True)
+            .options(*self._build_options(include_reviews=True))
+        )
+        return result.unique().scalar_one_or_none()
+
+    async def list_build_reviews(self, build_id: int) -> list[BuildReview]:
+        result = await self.db.execute(
+            select(BuildReview)
+            .where(BuildReview.build_id == build_id)
+            .options(joinedload(BuildReview.user))
+            .order_by(BuildReview.updated_at.desc())
+        )
+        return list(result.unique().scalars().all())
+
+    async def list_build_suggestions(self, build_id: int, user_id: int | None = None) -> list[BuildSuggestion]:
+        stmt = (
+            select(BuildSuggestion)
+            .where(BuildSuggestion.build_id == build_id)
+            .options(
+                joinedload(BuildSuggestion.user),
+                joinedload(BuildSuggestion.applied_by_user),
+                joinedload(BuildSuggestion.suggested_product),
+            )
+            .order_by(BuildSuggestion.created_at.desc())
+        )
+
+        if user_id is not None:
+            stmt = stmt.where(
+                (BuildSuggestion.user_id == user_id) |
+                (BuildSuggestion.applied_by_user_id == user_id)
+            )
+
+        result = await self.db.execute(stmt)
+        return list(result.unique().scalars().all())
+
+    async def create_build_suggestion(
+        self,
+        build_id: int,
+        user_id: int,
+        category: str,
+        suggested_product_id: int,
+        quantity: int,
+        comment: str | None,
+    ) -> BuildSuggestion:
+        normalized_category = category.strip().lower()
+        if normalized_category not in ALLOWED_BUILD_CATEGORIES:
+            raise ValueError(f"Unsupported category: {category}")
+
+        build = await self.get_public_build(build_id)
+        if not build:
+            raise LookupError("Build not found")
+        if build.user_id == user_id:
+            raise ValueError("You cannot suggest changes to your own build")
+
+        product_result = await self.db.execute(select(Product).where(Product.id == suggested_product_id))
+        selected_product = product_result.scalar_one_or_none()
+        if not selected_product:
+            raise LookupError("Product not found")
+
+        if selected_product.category.value != normalized_category:
+            raise ValueError("Suggested product category mismatch")
+
+        suggestion = BuildSuggestion(
+            build_id=build_id,
+            user_id=user_id,
+            category=CategoryEnum(normalized_category),
+            suggested_product_id=suggested_product_id,
+            quantity=max(1, quantity),
+            comment=comment,
+            status="pending",
+        )
+        self.db.add(suggestion)
+        await self.db.commit()
+
+        refreshed = await self.db.execute(
+            select(BuildSuggestion)
+            .where(BuildSuggestion.build_id == build_id, BuildSuggestion.user_id == user_id)
+            .options(
+                joinedload(BuildSuggestion.user),
+                joinedload(BuildSuggestion.applied_by_user),
+                joinedload(BuildSuggestion.suggested_product),
+            )
+            .order_by(BuildSuggestion.created_at.desc())
+        )
+        latest = refreshed.unique().scalars().first()
+        if latest is None:
+            raise LookupError("Suggestion not found")
+        return latest
+
+    async def apply_build_suggestion(self, build_id: int, user_id: int, suggestion_id: int) -> BuildSuggestion:
+        build = await self.get_public_build(build_id)
+        if not build:
+            raise LookupError("Build not found")
+        if build.user_id != user_id:
+            raise PermissionError("Only the build owner can apply suggestions")
+
+        result = await self.db.execute(
+            select(BuildSuggestion)
+            .where(BuildSuggestion.id == suggestion_id, BuildSuggestion.build_id == build_id)
+            .options(
+                joinedload(BuildSuggestion.user),
+                joinedload(BuildSuggestion.applied_by_user),
+                joinedload(BuildSuggestion.suggested_product),
+            )
+        )
+        suggestion = result.unique().scalar_one_or_none()
+        if not suggestion:
+            raise LookupError("Suggestion not found")
+        if suggestion.status != "pending":
+            raise ValueError("Suggestion has already been processed")
+
+        await self.add_or_replace_component(
+            build_id=build_id,
+            user_id=user_id,
+            category=suggestion.category.value,
+            product_id=suggestion.suggested_product_id,
+            quantity=suggestion.quantity,
+            source="suggestion",
+            append=False,
+        )
+
+        suggestion.status = "applied"
+        suggestion.applied_by_user_id = user_id
+        suggestion.applied_at = datetime.now(timezone.utc)
+        await self.db.commit()
+
+        refreshed = await self.db.execute(
+            select(BuildSuggestion)
+            .where(BuildSuggestion.id == suggestion_id)
+            .options(
+                joinedload(BuildSuggestion.user),
+                joinedload(BuildSuggestion.applied_by_user),
+                joinedload(BuildSuggestion.suggested_product),
+            )
+        )
+        latest = refreshed.unique().scalar_one_or_none()
+        if latest is None:
+            raise LookupError("Suggestion not found")
+        return latest
+
+    async def reject_build_suggestion(self, build_id: int, user_id: int, suggestion_id: int) -> BuildSuggestion:
+        build = await self.get_public_build(build_id)
+        if not build:
+            raise LookupError("Build not found")
+        if build.user_id != user_id:
+            raise PermissionError("Only the build owner can reject suggestions")
+
+        result = await self.db.execute(
+            select(BuildSuggestion)
+            .where(BuildSuggestion.id == suggestion_id, BuildSuggestion.build_id == build_id)
+            .options(
+                joinedload(BuildSuggestion.user),
+                joinedload(BuildSuggestion.applied_by_user),
+                joinedload(BuildSuggestion.suggested_product),
+            )
+        )
+        suggestion = result.unique().scalar_one_or_none()
+        if not suggestion:
+            raise LookupError("Suggestion not found")
+        if suggestion.status != "pending":
+            raise ValueError("Suggestion has already been processed")
+
+        suggestion.status = "rejected"
+        suggestion.applied_by_user_id = user_id
+        suggestion.applied_at = datetime.now(timezone.utc)
+        await self.db.commit()
+
+        refreshed = await self.db.execute(
+            select(BuildSuggestion)
+            .where(BuildSuggestion.id == suggestion_id)
+            .options(
+                joinedload(BuildSuggestion.user),
+                joinedload(BuildSuggestion.applied_by_user),
+                joinedload(BuildSuggestion.suggested_product),
+            )
+        )
+        latest = refreshed.unique().scalar_one_or_none()
+        if latest is None:
+            raise LookupError("Suggestion not found")
+        return latest
+
+    async def upsert_build_review(
+        self,
+        build_id: int,
+        user_id: int,
+        rating: int,
+        comment: str | None,
+    ) -> BuildReview:
+        build = await self.get_public_build(build_id)
+        if not build:
+            raise LookupError("Build not found")
+
+        result = await self.db.execute(
+            select(BuildReview).where(BuildReview.build_id == build_id, BuildReview.user_id == user_id)
+        )
+        review = result.scalar_one_or_none()
+
+        if review:
+            review.rating = rating
+            review.comment = comment
+        else:
+            review = BuildReview(
+                build_id=build_id,
+                user_id=user_id,
+                rating=rating,
+                comment=comment,
+            )
+            self.db.add(review)
+
+        await self.db.commit()
+
+        refreshed = await self.db.execute(
+            select(BuildReview)
+            .where(BuildReview.build_id == build_id, BuildReview.user_id == user_id)
+            .options(joinedload(BuildReview.user))
+        )
+        latest_review = refreshed.unique().scalar_one_or_none()
+        if latest_review is None:
+            raise LookupError("Review not found")
+        return latest_review
 
     async def remove_component(self, build_id: int, user_id: int, category: str, product_id: int | None = None, quantity: int = 1) -> PCBuild:
         normalized_category = category.strip().lower()

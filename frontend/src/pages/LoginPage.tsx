@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import apiClient from '../lib/apiClient';
 import { setAuthToken, setUser } from '../lib/auth';
+import { getErrorMessage } from '../lib/error';
 import { Cpu, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -10,10 +11,12 @@ export default function LoginPage() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
+        setErrorMessage('');
 
         try {
             const response = await apiClient.post('/auth/login', {
@@ -30,7 +33,8 @@ export default function LoginPage() {
             toast.success('Login successful');
             navigate('/dashboard');
         } catch (error: any) {
-            const message = error.response?.data?.detail || 'Login failed';
+            const message = getErrorMessage(error, 'Login failed');
+            setErrorMessage(message);
             toast.error(message);
         } finally {
             setLoading(false);
@@ -53,6 +57,12 @@ export default function LoginPage() {
                 <div className="soft-card auth-card">
                     <h2 className="text-2xl font-bold mb-2">Welcome back</h2>
                     <p className="text-sm text-[color:var(--text-soft)] mb-7">Sign in to your account to continue.</p>
+
+                    {errorMessage ? (
+                        <div className="mb-5 rounded-xl border border-[color:var(--danger)]/30 bg-[color:var(--danger)]/10 px-4 py-3 text-sm text-[color:var(--danger)] whitespace-pre-line">
+                            {errorMessage}
+                        </div>
+                    ) : null}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>

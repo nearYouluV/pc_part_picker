@@ -1,10 +1,11 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Cpu, LogOut, Home, Zap } from 'lucide-react';
-import { logout } from '../lib/auth';
+import { isAdmin, logout } from '../lib/auth';
 
 export default function Sidebar() {
     const navigate = useNavigate();
     const location = useLocation();
+    const adminUser = isAdmin();
 
     const handleLogout = () => {
         logout();
@@ -45,13 +46,15 @@ export default function Sidebar() {
                     <span>Builder</span>
                 </button>
 
-                <button
-                    onClick={() => navigate('/scraping')}
-                    className={linkClasses('/scraping')}
-                >
-                    <Zap className="w-5 h-5" />
-                    <span>Scraping</span>
-                </button>
+                {adminUser ? (
+                    <button
+                        onClick={() => navigate('/scraping')}
+                        className={linkClasses('/scraping')}
+                    >
+                        <Zap className="w-5 h-5" />
+                        <span>Scraping</span>
+                    </button>
+                ) : null}
             </nav>
 
             {/* Logout */}

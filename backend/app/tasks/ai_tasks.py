@@ -338,6 +338,47 @@ def _filter_ram_by_cpu_recommendations(
     return filtered
 
 
+def _extract_ram_types_from_motherboards(motherboards: list[dict[str, Any]]) -> set[str]:
+    ram_types: set[str] = set()
+
+    for motherboard in motherboards:
+        specs = motherboard.get("specs") or {}
+        ram_type = _normalize_ddr_label(specs.get("ram_type"))
+        if ram_type:
+            ram_types.add(ram_type)
+
+    return ram_types
+
+
+def _filter_ram_by_compatibility(
+    ram_candidates: list[dict[str, Any]],
+    cpu_candidates: list[dict[str, Any]],
+    motherboard_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    cpu_ram_types = _extract_top_cpu_constraints(cpu_candidates)[1]
+    motherboard_ram_types = _extract_ram_types_from_motherboards(motherboard_candidates)
+
+    allowed_ram_types: set[str] = set()
+    if cpu_ram_types and motherboard_ram_types:
+        allowed_ram_types = cpu_ram_types & motherboard_ram_types
+    elif motherboard_ram_types:
+        allowed_ram_types = motherboard_ram_types
+    else:
+        allowed_ram_types = cpu_ram_types
+
+    if not allowed_ram_types:
+        return ram_candidates
+
+    filtered: list[dict[str, Any]] = []
+    for ram in ram_candidates:
+        specs = ram.get("specs") or {}
+        ram_type = _normalize_ddr_label(specs.get("ram_type"))
+        if not ram_type or ram_type in allowed_ram_types:
+            filtered.append(ram)
+
+    return filtered
+
+
 def _rank_category_candidates(
     products: list[dict[str, Any]],
     category: str,
@@ -563,11 +604,6 @@ async def _build_candidate_map_for_context(
             "tdp": top_cpu.get("specs", {}).get("tdp"),
         }
 
-    ram_candidates = _filter_ram_by_cpu_recommendations(
-        grouped_products.get("ram", []),
-        cpu_recommendations,
-    )
-
     selected_cpu = build_context.get("cpu")
     selected_gpu = build_context.get("gpu")
 
@@ -630,6 +666,12 @@ async def _build_candidate_map_for_context(
     )
 
     distributed_mbs = _distribute_motherboards_by_socket(ranked_mbs, cpu_recommendations, top_n=5)
+
+    ram_candidates = _filter_ram_by_compatibility(
+        grouped_products.get("ram", []),
+        cpu_recommendations,
+        distributed_mbs,
+    )
 
     candidate_map = {
         "cpu": cpu_recommendations,

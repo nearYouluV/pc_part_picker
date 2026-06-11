@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.celery_app import celery_app
 from app.models.user import User
 from app.scraping_schemas import ScrapingTaskStatusResponse, ScrapingTriggerRequest, ScrapingTriggerResponse
-from app.services.auth_service import get_current_active_user
+from app.services.auth_service import get_current_admin_user
 from app.tasks.scraping_tasks import SUPPORTED_TRIGGER_CATEGORIES, scrape_category_task
 
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/scraping", tags=["scraping"])
 @router.post("/trigger", response_model=ScrapingTriggerResponse)
 async def trigger_scraping(
     payload: ScrapingTriggerRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_admin_user),
 ):
     category = payload.category.strip().lower()
     if category not in SUPPORTED_TRIGGER_CATEGORIES:
@@ -21,9 +21,6 @@ async def trigger_scraping(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported category. Allowed: {', '.join(sorted(SUPPORTED_TRIGGER_CATEGORIES.keys()))}",
         )
-
-    if not current_user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
 
     task = scrape_category_task.delay(category)
 
@@ -37,11 +34,8 @@ async def trigger_scraping(
 @router.get("/status/{task_id}", response_model=ScrapingTaskStatusResponse)
 async def get_scraping_status(
     task_id: str,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_admin_user),
 ):
-    if not current_user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
-
     result = celery_app.AsyncResult(task_id)
     if result.state in {"PENDING", "RECEIVED", "STARTED", "RETRY", "QUEUED"}:
         status_value = "processing" if result.state in {"STARTED", "RETRY"} else "queued"

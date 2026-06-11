@@ -35,6 +35,10 @@ export const isLoggedIn = (): boolean => {
     return !!getAccessToken();
 };
 
+export const isAdmin = (): boolean => {
+    return getUser()?.is_superuser ?? false;
+};
+
 export const logout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');

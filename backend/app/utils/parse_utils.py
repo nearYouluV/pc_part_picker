@@ -30,7 +30,18 @@ class AIParser:
         messages = [{"role": "system", "content": self.prompt}]
 
         if history:
-            messages.extend(history)
+            for message in history:
+                if not isinstance(message, dict):
+                    continue
+
+                role = str(message.get("role") or "").strip().lower()
+                content = message.get("content")
+                if role not in {"user", "assistant", "system"}:
+                    continue
+                if not isinstance(content, str):
+                    content = str(content or "")
+
+                messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": self.instructions + data})
         print("Messages sent to AI:", messages)
 

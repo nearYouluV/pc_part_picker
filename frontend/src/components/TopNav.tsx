@@ -1,11 +1,12 @@
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Cpu, Home, Zap, Box, LogOut } from 'lucide-react';
-import { getUser, logout } from '../lib/auth';
+import { getUser, isAdmin, logout } from '../lib/auth';
 
 export default function TopNav() {
     const navigate = useNavigate();
     const location = useLocation();
     const user = getUser();
+    const adminUser = isAdmin();
 
     const isActive = (path: string) => location.pathname.startsWith(path);
 
@@ -13,8 +14,11 @@ export default function TopNav() {
         { label: 'Dashboard', path: '/dashboard', icon: Home },
         { label: 'Builder', path: '/builder', icon: Cpu },
         { label: 'Products', path: '/products', icon: Box },
-        { label: 'Scraping', path: '/scraping', icon: Zap },
     ];
+
+    if (adminUser) {
+        navItems.push({ label: 'Scraping', path: '/scraping', icon: Zap });
+    }
 
     return (
         <header className="w-full sticky top-0 z-40 top-nav">

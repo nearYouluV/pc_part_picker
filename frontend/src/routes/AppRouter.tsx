@@ -6,7 +6,7 @@ import {
     Navigate,
     useLocation,
 } from 'react-router-dom';
-import { isLoggedIn } from '../lib/auth';
+import { isAdmin, isLoggedIn } from '../lib/auth';
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
 import DashboardPage from '../pages/DashboardPage';
@@ -21,11 +21,29 @@ interface ProtectedRouteProps {
     children: ReactNode;
 }
 
+interface AdminRouteProps {
+    children: ReactNode;
+}
+
 function ProtectedRoute({ children }: ProtectedRouteProps) {
     const location = useLocation();
 
     if (!isLoggedIn()) {
         return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    return <>{children}</>;
+}
+
+function AdminRoute({ children }: AdminRouteProps) {
+    const location = useLocation();
+
+    if (!isLoggedIn()) {
+        return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    if (!isAdmin()) {
+        return <Navigate to="/dashboard" replace />;
     }
 
     return <>{children}</>;
@@ -67,9 +85,9 @@ export default function AppRouter() {
                 <Route
                     path="/scraping"
                     element={
-                        <ProtectedRoute>
+                        <AdminRoute>
                             <ScrapingPage />
-                        </ProtectedRoute>
+                        </AdminRoute>
                     }
                 />
                 <Route

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import apiClient from '../lib/apiClient';
 import { setAuthToken, setUser } from '../lib/auth';
+import { getErrorMessage } from '../lib/error';
 import { Cpu, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -12,12 +13,16 @@ export default function RegisterPage() {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setErrorMessage('');
 
         if (password !== confirmPassword) {
-            toast.error('Passwords do not match');
+            const message = 'Passwords do not match';
+            setErrorMessage(message);
+            toast.error(message);
             return;
         }
 
@@ -42,7 +47,8 @@ export default function RegisterPage() {
             toast.success('Account created successfully');
             navigate('/dashboard');
         } catch (error: any) {
-            const message = error.response?.data?.detail || 'Registration failed';
+            const message = getErrorMessage(error, 'Registration failed');
+            setErrorMessage(message);
             toast.error(message);
         } finally {
             setLoading(false);
@@ -65,6 +71,12 @@ export default function RegisterPage() {
                 <div className="soft-card auth-card">
                     <h2 className="text-2xl font-bold mb-2">Create account</h2>
                     <p className="text-sm text-[color:var(--text-soft)] mb-7">Sign up to start building your PC.</p>
+
+                    {errorMessage ? (
+                        <div className="mb-5 rounded-xl border border-[color:var(--danger)]/30 bg-[color:var(--danger)]/10 px-4 py-3 text-sm text-[color:var(--danger)] whitespace-pre-line">
+                            {errorMessage}
+                        </div>
+                    ) : null}
 
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>

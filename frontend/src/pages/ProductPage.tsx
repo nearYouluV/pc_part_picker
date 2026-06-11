@@ -34,7 +34,7 @@ export default function ProductPage() {
                     external_id: data.external_id,
                     name: data.name,
                     price: data.price,
-                    category: '',
+                    category: data.category ?? '',
                     image_small: data.image_small,
                     image: data.image,
                     brand: data.brand,

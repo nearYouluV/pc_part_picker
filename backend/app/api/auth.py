@@ -93,13 +93,15 @@ async def login(
     _: None = Depends(login_rate_limiter),
 ):
     """Login and get access token + refresh token"""
-    normalized_email = normalize_email(user_credentials.email)
-    user = get_user_by_email(db, normalized_email)
+    identifier = user_credentials.identifier.strip().lower()
+    user = get_user_by_email(db, identifier)
+    if not user:
+        user = get_user_by_username(db, identifier)
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect email/username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

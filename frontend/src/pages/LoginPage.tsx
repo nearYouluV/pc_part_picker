@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 
 export default function LoginPage() {
     const navigate = useNavigate();
-    const [email, setEmail] = useState('');
+    const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
@@ -20,7 +20,7 @@ export default function LoginPage() {
 
         try {
             const response = await apiClient.post('/auth/login', {
-                email,
+                identifier,
                 password,
             });
 
@@ -66,13 +66,13 @@ export default function LoginPage() {
 
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div>
-                            <label className="block text-sm font-semibold mb-2 text-[color:var(--text-main)]">Email</label>
+                            <label className="block text-sm font-semibold mb-2 text-[color:var(--text-main)]">Email or username</label>
                             <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
+                                type="text"
+                                value={identifier}
+                                onChange={(e) => setIdentifier(e.target.value)}
                                 disabled={loading}
-                                placeholder="you@example.com"
+                                placeholder="you@example.com or johndoe"
                                 className="input-premium disabled:opacity-50"
                                 required
                             />

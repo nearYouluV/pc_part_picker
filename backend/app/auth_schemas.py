@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import AliasChoices, BaseModel, EmailStr, Field, field_validator
 from datetime import datetime
 
 
@@ -19,12 +19,16 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    identifier: str = Field(
+        min_length=1,
+        max_length=100,
+        validation_alias=AliasChoices("identifier", "email", "username"),
+    )
     password: str = Field(min_length=8, max_length=100)
 
-    @field_validator("email", mode="before")
+    @field_validator("identifier", mode="before")
     @classmethod
-    def normalize_email(cls, value: str) -> str:
+    def normalize_identifier(cls, value: str) -> str:
         return value.strip().lower()
 
 
